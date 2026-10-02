@@ -7,8 +7,11 @@ channel:
   language: "hi"
 
 llm:
-  model: "claude-sonnet-5-5"   # used for curation, scripting and image selection
+  provider: "auto"             # "auto" (whichever key you have) | "anthropic" | "openai"
+  model: "claude-sonnet-5-5"   # Anthropic: curation, scripting, translation
   vision_model: "claude-sonnet-5-5"
+  openai_model: "gpt-4o"       # OpenAI equivalent (must support tools + images)
+  openai_vision_model: "gpt-4o"
 
 feeds:   # verify these URLs once; feeds change. Add/remove freely.
   - {name: "BBC Hindi",        url: "https://feeds.bbci.co.uk/hindi/rss.xml"}
@@ -38,7 +41,10 @@ images:
   max_per_scene: 3
 
 tts:
-  provider: "elevenlabs"       # "elevenlabs" | "mock" (silent, for tests)
+  provider: "auto"             # "auto" | "elevenlabs" | "openai" | "mock" (silent, for tests)
+  openai_model: "gpt-4o-mini-tts"
+  openai_voice: "onyx"         # alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer
+  openai_instructions: "Speak in clear, natural Hindi like a calm, authoritative Indian TV news anchor. Steady pace, neutral tone."
   model_id: "eleven_multilingual_v2"
   stability: 0.45
   similarity_boost: 0.8

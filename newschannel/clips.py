@@ -12,9 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import requests
-
 from .config import Config
+from . import stt
 from .llm import call_tool
 from .tts import probe_duration
 
@@ -124,20 +123,6 @@ def prepare(clip: Clip, folder: Path, idx: int, fps: int) -> None:
 
 
 # ----------------------------------------------------------------------- speech -> subtitles
-def transcribe(wav: str) -> tuple[str, list[dict]]:
-    """ElevenLabs Scribe (same API key as the voice). Returns (language_code, words)."""
-    key = Config.env("ELEVENLABS_API_KEY", required=True)
-    with open(wav, "rb") as f:
-        r = requests.post("https://api.elevenlabs.io/v1/speech-to-text", headers={"xi-api-key": key},
-                          data={"model_id": "scribe_v1", "timestamps_granularity": "word"},
-                          files={"file": f}, timeout=300)
-    if r.status_code != 200:
-        raise RuntimeError(f"Speech-to-text error {r.status_code}: {r.text[:300]}")
-    j = r.json()
-    words = [w for w in j.get("words", []) if w.get("type", "word") == "word"]
-    return j.get("language_code", ""), words
-
-
 def group_words(words: list[dict], max_chars: int = 42) -> list[SubLine]:
     lines: list[SubLine] = []
     cur: list[dict] = []
@@ -164,10 +149,10 @@ def build_subtitles(clip: Clip, client: Any, model: str, provider: str) -> None:
     """Fill clip.subs / clip.transcript. Silent no-op in mock mode."""
     if provider == "mock":
         return
-    lang, words = transcribe(clip.wav)
+    lang, words = stt.transcribe(clip.wav, provider)
     clip.language = lang
     subs = group_words(words)
-    if subs and lang not in ("hi", "hin") and client is not None:
+    if subs and not stt.is_hindi(lang) and client is not None:
         res = call_tool(client, model, TRANSLATE_SYSTEM,
                         "\n".join(f"{i}. {s.text}" for i, s in enumerate(subs)), "submit_translation",
                         TRANSLATE_SCHEMA)
@@ -185,5 +170,5 @@ def load(cfg: Config, folders: list[Path], run: Path, client: Any, fps: int) -> 
     clips = discover(folders, c.get("max_seconds", 30))
     for i, clip in enumerate(clips):
         prepare(clip, run / "clips", i, fps)
-        build_subtitles(clip, client, cfg["llm"]["model"], cfg["tts"]["provider"])
+        build_subtitles(clip, client, cfg.models()[0], cfg.tts_provider())
     return clips

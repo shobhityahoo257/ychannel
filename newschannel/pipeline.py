@@ -83,7 +83,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     run_id = f"{datetime.now().strftime('%Y%m%d')}-{topic.slug}-{fmt_name}"
     run = store.run_dir(run_id)
     brand = brand_from(cfg)
-    model = cfg["llm"]["model"]
+    model, vision_model = cfg.models()
 
     # 0. original clips (speeches etc.) supplied by you: trim, normalise, transcribe, subtitle
     clips = clipmod.load(cfg, [*(clip_folders or []), cfg.path(cfg["images"]["inbox_dir"]) / topic.slug / "clips"],
@@ -119,7 +119,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     assets = gather_assets(cfg, topic, script, run, total - clip_total, extra_images or [], log)
     by_id = {a.id: a for a in assets}
     log("choosing and arranging photos…")
-    plan = planner.make_plan(client, cfg["llm"]["vision_model"], script.scenes, assets,
+    plan = planner.make_plan(client, vision_model, script.scenes, assets,
                              cfg["images"]["max_per_scene"])
     shots = planner.time_shots(plan, starts, durs)
     save_json(run / "plan.json", [asdict(s) for s in shots])

@@ -15,25 +15,29 @@ from .tts import make_tts
 
 
 def _client(cfg: Config, required: bool = True):
-    key = Config.env("ANTHROPIC_API_KEY", required=required)
-    return make_client(key) if key else None
+    return make_client(cfg, required)
 
 
 def cmd_doctor(cfg: Config, a) -> int:
     import shutil
-    ok = True
-    for name, fine in [("ffmpeg", bool(shutil.which("ffmpeg"))), ("ffprobe", bool(shutil.which("ffprobe"))),
-                       ("ANTHROPIC_API_KEY", bool(Config.env("ANTHROPIC_API_KEY"))),
-                       ("ELEVENLABS_API_KEY", bool(Config.env("ELEVENLABS_API_KEY"))),
-                       ("ELEVENLABS_VOICE_ID", bool(Config.env("ELEVENLABS_VOICE_ID"))),
-                       ("PEXELS_API_KEY (optional)", True), ("Hindi font", cfg.path("assets/fonts/NotoSansDevanagari-Bold.ttf").exists()),
-                       ("YouTube client secret", bool(Config.env("YOUTUBE_CLIENT_SECRETS") and
-                                                      cfg.path(Config.env("YOUTUBE_CLIENT_SECRETS")).exists()))]:
-        print(f"{'OK ' if fine else 'MISSING'}  {name}")
-        ok &= fine
     from PIL import features
-    print(f"{'OK ' if features.check('raqm') else 'MISSING'}  Pillow Raqm (Hindi text shaping)")
-    return 0 if ok else 1
+    has = lambda k: bool(Config.env(k))  # noqa: E731
+    llm_ok = has("ANTHROPIC_API_KEY") or has("OPENAI_API_KEY")
+    voice_ok = (has("ELEVENLABS_API_KEY") and has("ELEVENLABS_VOICE_ID")) or has("OPENAI_API_KEY")
+    secret = Config.env("YOUTUBE_CLIENT_SECRETS")
+    checks = [
+        ("ffmpeg", bool(shutil.which("ffmpeg"))), ("ffprobe", bool(shutil.which("ffprobe"))),
+        ("Hindi font", cfg.path("assets/fonts/NotoSansDevanagari-Bold.ttf").exists()),
+        ("Pillow Raqm (Hindi text shaping)", features.check("raqm")),
+        (f"Script/photo AI key (ANTHROPIC_API_KEY or OPENAI_API_KEY) -> using {cfg.llm_provider()}", llm_ok),
+        (f"Voice key (ELEVENLABS_API_KEY+VOICE_ID or OPENAI_API_KEY) -> using {cfg.tts_provider()}", voice_ok),
+        ("YouTube client secret (needed only to upload)", bool(secret and cfg.path(secret).exists())),
+    ]
+    for name, fine in checks:
+        print(f"{'OK     ' if fine else 'MISSING'}  {name}")
+    print(f"        optional: PEXELS_API_KEY {'set' if has('PEXELS_API_KEY') else 'not set'}, "
+          f"Telegram {'set' if has('TELEGRAM_BOT_TOKEN') else 'not set'}")
+    return 0 if all(f for n, f in checks if "YouTube" not in n) else 1
 
 
 def cmd_demo(cfg: Config, a) -> int:
@@ -46,7 +50,7 @@ def cmd_demo(cfg: Config, a) -> int:
 def cmd_fetch(cfg: Config, a) -> int:
     stories = sources.fetch_stories(cfg["feeds"], cfg["curation"]["max_age_hours"])
     store = Store(cfg.path(cfg["youtube"]["output_dir"]))
-    topics = C.curate(_client(cfg, False) if not a.offline else None, cfg["llm"]["model"], stories,
+    topics = C.curate(_client(cfg, False) if not a.offline else None, cfg.models()[0], stories,
                       cfg["curation"]["min_sources"], [h["topic"] for h in store.history()],
                       cfg["curation"]["candidates_for_llm"])
     for i, t in enumerate(topics):
@@ -64,7 +68,7 @@ def cmd_daily(cfg: Config, a) -> int:
     client, tts = _client(cfg), make_tts(cfg)
     store = Store(cfg.path(cfg["youtube"]["output_dir"]))
     stories = sources.fetch_stories(cfg["feeds"], cfg["curation"]["max_age_hours"])
-    topics = C.curate(client, cfg["llm"]["model"], stories, cfg["curation"]["min_sources"],
+    topics = C.curate(client, cfg.models()[0], stories, cfg["curation"]["min_sources"],
                       [h["topic"] for h in store.history()], cfg["curation"]["candidates_for_llm"])
     plan = ["short"] * cfg["daily"]["shorts"] + ["long"] * cfg["daily"]["long"]
     if not topics:

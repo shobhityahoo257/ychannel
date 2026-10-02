@@ -59,6 +59,31 @@ class Config:
         p = Path(rel)
         return p if p.is_absolute() else self.root / p
 
+    # -- provider selection: "auto" picks whichever API key is present
+    def llm_provider(self) -> str:
+        p = self["llm"].get("provider", "auto")
+        if p != "auto":
+            return p
+        if Config.env("ANTHROPIC_API_KEY"):
+            return "anthropic"
+        return "openai" if Config.env("OPENAI_API_KEY") else "anthropic"
+
+    def tts_provider(self) -> str:
+        p = self["tts"].get("provider", "auto")
+        if p != "auto":
+            return p
+        if Config.env("ELEVENLABS_API_KEY"):
+            return "elevenlabs"
+        return "openai" if Config.env("OPENAI_API_KEY") else "elevenlabs"
+
+    def models(self) -> tuple[str, str]:
+        """(text model, vision model) for the active LLM provider."""
+        llm = self["llm"]
+        if self.llm_provider() == "openai":
+            m = llm.get("openai_model", "gpt-4o")
+            return m, llm.get("openai_vision_model", m)
+        return llm["model"], llm.get("vision_model", llm["model"])
+
     def fmt(self, name: str) -> Format:
         return Format(name=name, **self.data["formats"][name])
 

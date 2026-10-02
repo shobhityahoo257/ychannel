@@ -10,6 +10,12 @@ RSS feeds → curate (≥2 outlets) → Hindi script → ElevenLabs voice → AI
         → Telegram/CLI approval → YouTube upload → YPP progress stats
 ```
 
+## Which API keys do I need?
+**An OpenAI key alone is enough** for everything: script writing, photo picking (vision), the Hindi voice (`gpt-4o-mini-tts`)
+and clip subtitles (Whisper). Or use Anthropic (scripts/photos) and/or ElevenLabs (voice, usually the most natural Hindi).
+`provider: auto` in `config.yaml` uses whichever keys are in `.env`; force one with `llm.provider` / `tts.provider`.
+Pick an OpenAI voice with `OPENAI_VOICE` (try `onyx`, `ash`, `nova`) and change the anchor style in `tts.openai_instructions`.
+
 ## Setup
 ```bash
 pip install -r requirements.txt          # also needs ffmpeg + libraqm (see deploy/Dockerfile)

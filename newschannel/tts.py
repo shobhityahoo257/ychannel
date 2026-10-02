@@ -7,6 +7,7 @@ from pathlib import Path
 
 import requests
 
+from . import stt
 from .config import Config
 from .models import SceneAudio, Word
 
@@ -82,6 +83,54 @@ class ElevenLabsTTS:
         return SceneAudio(str(out), probe_duration(out), words)
 
 
+class OpenAITTS:
+    """OpenAI speech (handles Hindi). It returns no timings, so Whisper is run on the result to
+    time the words for captions; if its word count differs from the script, timings are spread
+    across the spoken span in proportion to word length."""
+
+    URL = "https://api.openai.com/v1/audio/speech"
+
+    def __init__(self, cfg: Config):
+        t = cfg["tts"]
+        self.key = Config.env("OPENAI_API_KEY", required=True)
+        self.model = t.get("openai_model", "gpt-4o-mini-tts")
+        self.voice = Config.env("OPENAI_VOICE") or t.get("openai_voice", "onyx")
+        self.instructions = t.get("openai_instructions", "")
+        self.speed = t.get("speed", 1.0)
+
+    def synthesize(self, text: str, out: Path, prev: str = "", nxt: str = "") -> SceneAudio:
+        body = {"model": self.model, "voice": self.voice, "input": normalize(text),
+                "response_format": "mp3", "speed": self.speed}
+        if self.instructions and "tts-1" not in self.model:     # `instructions` is unsupported by tts-1
+            body["instructions"] = self.instructions
+        r = requests.post(self.URL, json=body, headers={"Authorization": f"Bearer {self.key}"}, timeout=180)
+        if r.status_code != 200:
+            raise RuntimeError(f"OpenAI TTS error {r.status_code}: {r.text[:300]}")
+        out.write_bytes(r.content)
+        dur = probe_duration(out)
+        try:
+            _, heard = stt.openai_words(str(out), language="hi")
+        except Exception:
+            heard = []
+        return SceneAudio(str(out), dur, align_words(text.split(), heard, dur))
+
+
+def align_words(script_words: list[str], heard: list[dict], duration: float) -> list[Word]:
+    if not script_words:
+        return []
+    if heard and len(heard) == len(script_words):
+        return [Word(o, h["start"], h["end"]) for o, h in zip(script_words, heard)]
+    t0 = heard[0]["start"] if heard else 0.0
+    t1 = heard[-1]["end"] if heard else duration
+    total = sum(len(w) for w in script_words) or 1
+    out, cur = [], t0
+    for w in script_words:
+        span = (t1 - t0) * len(w) / total
+        out.append(Word(w, cur, cur + span * 0.92))
+        cur += span
+    return out
+
+
 class MockTTS:
     """Silent audio with evenly spaced word timings; for tests and dry runs."""
 
@@ -97,7 +146,8 @@ class MockTTS:
 
 
 def make_tts(cfg: Config):
-    return MockTTS() if cfg["tts"]["provider"] == "mock" else ElevenLabsTTS(cfg)
+    p = cfg.tts_provider()
+    return MockTTS() if p == "mock" else OpenAITTS(cfg) if p == "openai" else ElevenLabsTTS(cfg)
 
 
 def synthesize_script(tts, scenes, folder: Path) -> list[SceneAudio]:
