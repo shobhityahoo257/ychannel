@@ -1,0 +1,9 @@
+anthropic>=0.40
+feedparser>=6.0
+pillow>=10.0
+numpy>=1.26
+requests>=2.31
+pyyaml>=6.0
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
+pytest>=8.0

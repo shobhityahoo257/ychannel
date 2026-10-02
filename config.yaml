@@ -1,0 +1,63 @@
+channel:
+  name: "भारत राजनीति टुडे"
+  handle: "@BharatRajneetiToday"
+  logo: ""                     # optional PNG path (transparent background)
+  accent_color: "#D90429"      # red broadcast accent
+  dark_color: "#0B132B"
+  language: "hi"
+
+llm:
+  model: "claude-sonnet-5-5"   # used for curation, scripting and image selection
+  vision_model: "claude-sonnet-5-5"
+
+feeds:   # verify these URLs once; feeds change. Add/remove freely.
+  - {name: "BBC Hindi",        url: "https://feeds.bbci.co.uk/hindi/rss.xml"}
+  - {name: "The Hindu",        url: "https://www.thehindu.com/news/national/feeder/default.rss"}
+  - {name: "Hindustan Times",  url: "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml"}
+  - {name: "Times of India",   url: "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms"}
+  - {name: "Indian Express",   url: "https://indianexpress.com/section/political-pulse/feed/"}
+  - {name: "Google News (राजनीति)", url: "https://news.google.com/rss/search?q=%E0%A4%AD%E0%A4%BE%E0%A4%B0%E0%A4%A4+%E0%A4%B0%E0%A4%BE%E0%A4%9C%E0%A4%A8%E0%A5%80%E0%A4%A4%E0%A4%BF&hl=hi&gl=IN&ceid=IN:hi"}
+
+curation:
+  max_age_hours: 24
+  min_sources: 2               # a story must be reported by >= N distinct outlets
+  candidates_for_llm: 40
+
+daily:
+  shorts: 3
+  long: 1
+
+formats:
+  short: {width: 1080, height: 1920, fps: 30, target_seconds: 60, max_scenes: 7,  captions: true,  ticker: false}
+  long:  {width: 1920, height: 1080, fps: 30, target_seconds: 270, max_scenes: 14, captions: true, ticker: true}
+
+images:
+  inbox_dir: "inbox"           # drop your own photos here (see README)
+  min_side_px: 700             # reject low-res images (look bad when zoomed)
+  use_stock_fallback: true     # Pexels / Wikimedia Commons when you supply too few
+  max_per_scene: 3
+
+tts:
+  provider: "elevenlabs"       # "elevenlabs" | "mock" (silent, for tests)
+  model_id: "eleven_multilingual_v2"
+  stability: 0.45
+  similarity_boost: 0.8
+  style: 0.25
+  speed: 1.0
+
+audio:
+  music_dir: "assets/music"    # put royalty-free .mp3/.wav here (optional)
+  music_volume: 0.10
+  target_lufs: -14
+
+review:
+  require_approval: true       # never auto-publish unless you turn this off
+  telegram: true               # if token configured
+
+youtube:
+  category_id: "25"            # News & Politics
+  privacy: "private"           # private | unlisted | public (private while testing)
+  contains_synthetic_media: true
+  default_tags: ["भारतीय राजनीति", "Indian Politics", "Hindi News", "ताज़ा खबर"]
+  made_for_kids: false
+  output_dir: "output"

@@ -1,0 +1,7 @@
+output/
+secrets/
+__pycache__/
+*.pyc
+.env
+inbox/*
+!inbox/.gitkeep
