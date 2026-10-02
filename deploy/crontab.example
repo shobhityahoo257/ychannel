@@ -1,0 +1,6 @@
+# Produce the day's videos at 05:30 IST (00:00 UTC) and send them to Telegram for approval
+0 0 * * *   cd /opt/ychannel && python -m newschannel daily >> logs/daily.log 2>&1
+# Listen for Approve/Reject button presses for 3 hours
+10 0 * * *  cd /opt/ychannel && python -m newschannel review listen --seconds 10800 >> logs/review.log 2>&1
+# Upload whatever you approved, scheduled for 07:30 IST (02:00 UTC)
+0 3 * * *   cd /opt/ychannel && python -m newschannel publish >> logs/publish.log 2>&1

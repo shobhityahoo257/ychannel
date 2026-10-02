@@ -223,16 +223,23 @@ def make_strap(tl: Timeline, s: Strap) -> Image.Image:
 
 
 def make_ticker_strip(tl: Timeline, h: int) -> tuple[Image.Image, int, int]:
-    """Returns (scroll strip, unit width, label width)."""
+    """Returns (scroll strip, unit width, label width). Separators are drawn, not typed,
+    because the Devanagari font has no diamond glyph."""
     b = tl.brand
     f = font(b.font_bold, int(h * 0.56))
-    unit_text = "   ◆   ".join(tl.ticker.split("|")) + "   ◆   "
-    unit = int(f.getlength(unit_text))
+    items = [t for t in tl.ticker.split("|") if t.strip()]
+    gap = int(h * 1.1)
+    unit = sum(int(f.getlength(t)) + gap for t in items)
     reps = (tl.width // max(unit, 1)) + 3
-    strip = Image.new("RGB", (unit * reps, h), (*b.dark,))
+    strip = Image.new("RGB", (unit * reps, h), b.dark)
     d = ImageDraw.Draw(strip)
-    for i in range(reps):
-        d.text((i * unit, h / 2), unit_text, font=f, fill=(255, 255, 255), anchor="lm")
+    x, r = 0, h * 0.16
+    for _ in range(reps):
+        for t in items:
+            d.text((x, h / 2), t, font=f, fill=(255, 255, 255), anchor="lm")
+            x += int(f.getlength(t)) + gap // 2
+            d.polygon([(x, h / 2 - r), (x + r, h / 2), (x, h / 2 + r), (x - r, h / 2)], fill=b.accent)
+            x += gap // 2
     label_w = int(f.getlength("सुर्खियाँ")) + int(h * 0.8)
     return strip, unit, label_w
 
