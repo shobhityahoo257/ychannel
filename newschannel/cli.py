@@ -36,6 +36,13 @@ def cmd_doctor(cfg: Config, a) -> int:
     return 0 if ok else 1
 
 
+def cmd_demo(cfg: Config, a) -> int:
+    from . import demo
+    print("Rendering a keyless demo (placeholder pictures, silent audio)…")
+    print("Video:", demo.run(cfg, a.format, Path(a.out) if a.out else None))
+    return 0
+
+
 def cmd_fetch(cfg: Config, a) -> int:
     stories = sources.fetch_stories(cfg["feeds"], cfg["curation"]["max_age_hours"])
     store = Store(cfg.path(cfg["youtube"]["output_dir"]))
@@ -133,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor")
+    dm = sub.add_parser("demo", help="render a sample video without any API keys")
+    dm.add_argument("--format", choices=["short", "long"], default="short"); dm.add_argument("--out")
     f = sub.add_parser("fetch"); f.add_argument("--offline", action="store_true")
     sub.add_parser("daily")
     m = sub.add_parser("make", help="make one video from your own headline/text/photos")
@@ -148,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("stats")
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
-    return {"doctor": cmd_doctor, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
+    return {"doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
             "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats}[a.cmd](cfg, a)
 
 
