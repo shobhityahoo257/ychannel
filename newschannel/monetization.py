@@ -61,6 +61,7 @@ def policy_check(script: Script, topic: Topic, assets: list[Asset], history: lis
     if not any(s.kind == "analysis" for s in script.scenes):
         issues.append(Issue("block", "No analysis scene: pure headline-reading is 'mass-produced' content."))
     narration = " ".join(s.narration for s in script.scenes)
+    narration = re.sub(r"[\"“”][^\"“”]{12,}[\"“”]", " ", narration)    # attributed, verified quotes are allowed to match the source
     manual = bool(topic.stories) and topic.stories[0].source == "manual"
     src_text = "" if manual else " ".join(f"{s.title}. {s.summary}" for s in topic.stories)
     if src_text and _ngrams(narration, 8) & _ngrams(src_text, 8):

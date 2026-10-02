@@ -46,6 +46,11 @@ class Scene:
     label: str = ""           # small tag on the strap, e.g. "ताज़ा खबर", "विश्लेषण"
     kind: str = "news"        # news | analysis | outro | clip
     clip_id: int | None = None  # for kind == "clip": index of the supplied video clip
+    # --- deep-analysis videos only (empty for ordinary news videos)
+    section: str = ""         # hook | context | facts | quote | analysis | counterpoint | scenarios | close
+    claim_ids: list[str] = field(default_factory=list)   # ledger claims this scene rests on
+    card: dict | None = None  # {"type": "quote|number|timeline|ledger", ...} graphic built from the ledger
+    source_tag: str = ""      # e.g. "PIB · The Hindu", shown on screen while the scene plays
 
 
 @dataclass
@@ -55,6 +60,8 @@ class Script:
     tags: list[str]
     scenes: list[Scene]
     sources: list[str] = field(default_factory=list)
+    stance: str = ""
+    language: str = ""
 
     @property
     def word_count(self) -> int:
@@ -113,4 +120,5 @@ def script_from_dict(d: dict) -> Script:
     return Script(
         title=d["title"], description=d.get("description", ""), tags=list(d.get("tags", [])),
         scenes=[Scene(**s) for s in d["scenes"]], sources=list(d.get("sources", [])),
+        stance=d.get("stance", ""), language=d.get("language", ""),
     )

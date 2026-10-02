@@ -61,7 +61,7 @@ def _safe(candidate: str, allowed_numbers: set[str]) -> bool:
 
 
 def improve(client: Any, model: str, script: Script, topic: Topic, insights: str = "",
-            categories: list[str] | None = None, lang: str = "hinglish") -> Packaging:
+            categories: list[str] | None = None, lang: str = "hinglish", rewrite_hook: bool = True) -> Packaging:
     """Rewrite script.scenes[0].narration and script.title in place with the best safe options."""
     facts = " ".join(f"{s.title}. {s.summary}" for s in topic.stories[:6])
     first = script.scenes[0]
@@ -89,7 +89,7 @@ def improve(client: Any, model: str, script: Script, topic: Topic, insights: str
         if 6 <= n <= 28 and n <= old_words * 1.8 + 6 and _safe(text, allowed):
             pk.chosen_hook = text
             break
-    if pk.chosen_hook and first.kind != "clip":
+    if rewrite_hook and pk.chosen_hook and first.kind != "clip":
         first.narration = pk.chosen_hook
     for t in pk.titles:
         text = t["text"].strip()

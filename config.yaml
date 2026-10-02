@@ -35,6 +35,7 @@ daily:
 
 formats:
   short: {width: 1080, height: 1920, fps: 30, target_seconds: 60, max_scenes: 7,  captions: true,  ticker: false}
+  analysis: {width: 1920, height: 1080, fps: 30, target_seconds: 540, max_scenes: 40, captions: true, ticker: false}
   long:  {width: 1920, height: 1080, fps: 30, target_seconds: 270, max_scenes: 14, captions: true, ticker: true}
 
 images:
@@ -95,7 +96,20 @@ schedule:                      # used by `python -m newschannel schedule`
   breaking: true               # also watch for breaking news while the scheduler runs
   publish_slots: ["07:30", "12:30", "18:30"]   # one approved video goes out at each time
 
+analysis:                      # deep-analysis videos (research -> fact ledger -> analysis)
+  default_stance: "auto"       # "auto" = the tool recommends from the evidence | neutral | critical | supportive
+  default_minutes: "auto"      # "auto" or a number between 5 and 15
+  max_sources: 10
+  # extra rules checked automatically on every script (regex, case-insensitive); see newschannel/deep.py for the defaults
+  banned_patterns: null
+  warn_patterns: null
+  sources:                     # trust tiers; *.gov.in and *.nic.in count as official automatically
+    tier1: null                # null = built-in list (PIB, PMO, Sansad, ECI, RBI, courts ...)
+    tier2: null                # null = built-in list of agencies and major outlets
+  music: "auto"                # off | auto (mood follows the angle) | calm | tension | warm
+
 audio:
+  generate_music: true         # make a royalty-free ambient bed when assets/music is empty (analysis videos)
   music_dir: "assets/music"    # put royalty-free .mp3/.wav here (optional)
   music_volume: 0.10
   target_lufs: -14

@@ -11,7 +11,9 @@ from typing import Any, Callable
 
 from . import audio as A
 from . import clips as clipmod
-from . import learn
+from . import cards, deep, learn
+from . import music as music_mod
+from .ledger import Ledger
 from .library import Library
 from . import media, planner, render
 from .config import Config
@@ -118,13 +120,18 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
             extra_images: list[Path] | None = None, preset: str | None = None,
             log: Callable[[str], None] = print, clip_folders: list[Path] | None = None,
             breaking: bool = False, library_ids: list[str] | None = None,
-            language: str | None = None) -> dict[str, Any]:
+            language: str | None = None, script: Script | None = None, ledger: Ledger | None = None,
+            target_seconds: int | None = None, music: str | None = None,
+            deep_check: tuple[list[str], list[str]] | None = None, as_of: str = "") -> dict[str, Any]:
+    """Make one video. For deep-analysis videos pass a ready `script`, its fact `ledger` and the checker's results."""
     if language:
         cfg.data.setdefault("content", {})["language"] = language
     lang = cfg.lang
     fmt = cfg.fmt(fmt_name)
     if breaking:                                 # breaking news: shorter, faster, labelled
         fmt.target_seconds = cfg.get("breaking", {}).get("target_seconds", 40)
+    if target_seconds:
+        fmt.target_seconds = target_seconds
     run_id = f"{datetime.now().strftime('%Y%m%d')}-{topic.slug}-{fmt_name}"
     run = store.run_dir(run_id)
     brand = brand_from(cfg)
@@ -140,8 +147,16 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
 
     # 1. script (cached so a failed render does not re-bill the LLM)
     sp = run / "script.json"
+    if ledger is not None:
+        ledger.save(run / "ledger.json")
     if sp.exists():
         script = script_from_dict(json.loads(sp.read_text(encoding="utf-8")))
+    elif script is not None:                      # deep analysis: already written and fact-checked
+        log("polishing title and thumbnail text…")
+        pk = improve(client, model, script, topic, insights, cfg.get("playlists", {}).get("categories", []), lang,
+                     rewrite_hook=False)
+        save_json(run / "packaging.json", pk)
+        save_json(sp, script)
     else:
         log("writing script…")
         script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips, insights, urgent=breaking, lang=lang)
@@ -177,6 +192,25 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                              cfg["images"]["max_per_scene"])
     shots = planner.time_shots(plan, starts, durs)
     save_json(run / "plan.json", [asdict(s) for s in shots])
+    card_shots: list[render.ShotT] = []
+    if ledger is not None:                       # quote / number / timeline cards built from the ledger
+        (run / "cards").mkdir(exist_ok=True)
+        for i, sc in enumerate(script.scenes):
+            if not sc.card or sc.kind == "clip":
+                continue
+            img = cards.build_card(ledger, sc.card, brand, lang, fmt.width, fmt.height, run / "cards" / f"card_{i}.jpg")
+            dc = min(8.0 if sc.card["type"] == "quote" else 6.0, 0.7 * durs[i])
+            if not img or dc < 2.0:
+                continue
+            mine = [x for x in shots if x.scene == i]
+            cut = starts[i] + dc
+            while mine and mine[0].end <= cut + 0.8:       # photos fully covered by the card are dropped
+                shots.remove(mine.pop(0))
+            if mine:
+                mine[0].start = cut
+            else:
+                dc = durs[i]
+            card_shots.append(render.ShotT(str(img), starts[i], starts[i] + dc, "still", graphic=True))
 
     # 4. timeline
     tshots: list[render.ShotT] = []
@@ -192,6 +226,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         if sc.kind == "clip":
             tshots.append(render.ShotT("", starts[i], starts[i] + durs[i], "still",
                                        video=clips[sc.clip_id].video))
+    tshots += card_shots
     tshots.sort(key=lambda x: x.start)
     if outro:
         if es.get("enabled", True):     # leaves clean boxes where you place YouTube's end-screen elements in Studio
@@ -210,6 +245,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
             c = clips[sc.clip_id]
             subs += [render.TextSpan(starts[i] + x.start, starts[i] + x.end, x.text) for x in c.subs]
             credits.append(render.TextSpan(starts[i], starts[i] + durs[i], f"{label(lang, 'source')}: {c.credit}"))
+        if sc.source_tag and sc.kind != "clip":
+            credits.append(render.TextSpan(starts[i], starts[i] + durs[i], f"{label(lang, 'source')}: {sc.source_tag}"))
         words += [render.CapWord(w.text, starts[i] + A.LEAD_IN + w.start, starts[i] + A.LEAD_IN + w.end)
                   for w in au.words]
         s0 = starts[i] + 0.2
@@ -224,9 +261,20 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     log(f"rendering {total:.0f}s {fmt.width}x{fmt.height}…")
     silent = render.render_video(tl, run / "video_silent.mp4")
     nar = A.build_narration(audios, durs, intro, total, run / "narration.wav")
-    music = A.pick_music(cfg.path(cfg["audio"]["music_dir"]))
-    final = A.mux(silent, nar, run / "video.mp4", total, music, cfg["audio"]["music_volume"],
-                  cfg["audio"]["target_lufs"])
+    music_file = A.pick_music(cfg.path(cfg["audio"]["music_dir"]))
+    swell = None
+    if ledger is not None:                        # analysis videos get a mood-matched bed that swells at section changes
+        mood = music or cfg.get("analysis", {}).get("music", "auto")
+        if mood == "off":
+            music_file = None
+        else:
+            if music_file is None and cfg["audio"].get("generate_music", True):
+                music_file = music_mod.synth(run / "bed.wav", total, music_mod.mood_for(script.stance)
+                                             if mood == "auto" else mood)
+            swell = music_mod.swell_expr([starts[i] for i in range(1, len(script.scenes))
+                                          if script.scenes[i].section != script.scenes[i - 1].section])
+    final = A.mux(silent, nar, run / "video.mp4", total, music_file, cfg["audio"]["music_volume"],
+                  cfg["audio"]["target_lufs"], swell)
     silent.unlink(missing_ok=True)
     pkp = run / "packaging.json"
     pk = Packaging(**json.loads(pkp.read_text(encoding="utf-8"))) if pkp.exists() else Packaging()
@@ -238,10 +286,20 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
 
     # 6. description, policy gate, meta
     credits = sorted({a.credit for a in assets if a.credit})
-    desc = build_description(script, topic, cfg["channel"], not long_form, credits,
-                             cfg["youtube"].get("contains_synthetic_media", True), clips, lang)
+    if ledger is not None:
+        desc = deep.build_description(script, ledger, starts, intro, credits, cfg["channel"], lang, as_of,
+                                      cfg["youtube"].get("contains_synthetic_media", True))
+    else:
+        desc = build_description(script, topic, cfg["channel"], not long_form, credits,
+                                 cfg["youtube"].get("contains_synthetic_media", True), clips, lang)
     issues = policy_check(script, topic, assets, store.history(), cfg.get("limits", {}).get("max_uploads_per_day", 4),
                           cfg["curation"]["min_sources"], clips, total, cfg.get("clips", {}).get("max_share", 0.4))
+    if deep_check:
+        issues += [Issue("block", f"Fact check: {m}") for m in deep_check[0]]
+        issues += [Issue("warn", m) for m in deep_check[1]]
+    if ledger is not None and script.stance in ("critical", "supportive"):
+        issues.append(Issue("warn", f"Angle: {script.stance}. Every point is tied to ledger claims, but read the script once "
+                                    "and check the Counterpoint scene before approving."))
     if breaking:
         issues.append(Issue("warn", "BREAKING: details may still be developing. Re-check every fact against the "
                                     "sources before approving."))
@@ -255,6 +313,11 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                        "language": c.language, "machine_translated": c.machine_translated,
                        "transcript": c.transcript} for c in clips],
             "created": datetime.now(timezone.utc).isoformat()}
+    if ledger is not None:
+        meta["analysis"] = {"stance": script.stance, "minutes": round(total / 60, 1), "counts": ledger.counts(),
+                            "as_of": as_of, "ledger_file": "ledger.json",
+                            "sources": [{"id": x.id, "outlet": x.outlet, "tier": x.tier, "url": x.url, "title": x.title}
+                                        for x in ledger.sources]}
     store.save_meta(run_id, meta)
     Library(cfg.path(cfg["images"].get("library_dir", "library"))).mark_used(lib_used)
     if any(i.level == "block" for i in issues):

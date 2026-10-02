@@ -23,6 +23,12 @@ LABELS: dict[str, dict[str, str]] = {
         "comment_sub": "Aisi khabron ke liye channel ko subscribe karna na bhoolein.",
         "chapters": "Chapters:", "asof": "As of", "sources_tier": "Source quality",
         "tier1": "Official / primary", "tier2": "Major outlet / agency", "tier3": "Other",
+        "ch_hook": "Intro", "ch_recap": "Kya hua", "ch_context": "Background", "ch_positions": "Kisne kya kaha",
+        "ch_analysis": "Vishleshan", "ch_counterpoint": "Doosra paksh", "ch_scenarios": "Aage kya ho sakta hai",
+        "ch_close": "Nishkarsh",
+        "d_analysis": "Is video ke facts neeche diye sources par based hain. 'Vishleshan' wale hisse hamari vyakhya hain, "
+                      "jo in facts se nikali gayi hai; woh tathya nahi, raay hai.",
+        "d_unconfirmed": "Jo baatein sirf ek source ne report ki ya kisi ne aarop ke roop mein kahin, unhe video mein naam lekar bataya gaya hai.",
     },
     "hindi": {
         "news": "ताज़ा खबर", "analysis": "विश्लेषण", "clip": "मूल वीडियो", "breaking": "ब्रेकिंग न्यूज़",
@@ -41,6 +47,12 @@ LABELS: dict[str, dict[str, str]] = {
         "comment_sub": "ऐसी खबरों के लिए चैनल को सब्सक्राइब करना न भूलें।",
         "chapters": "Chapters:", "asof": "As of", "sources_tier": "Source quality",
         "tier1": "Official / primary", "tier2": "Major outlet / agency", "tier3": "Other",
+        "ch_hook": "परिचय", "ch_recap": "क्या हुआ", "ch_context": "पृष्ठभूमि", "ch_positions": "किसने क्या कहा",
+        "ch_analysis": "विश्लेषण", "ch_counterpoint": "दूसरा पक्ष", "ch_scenarios": "आगे क्या हो सकता है",
+        "ch_close": "निष्कर्ष",
+        "d_analysis": "इस वीडियो के तथ्य नीचे दिए स्रोतों पर आधारित हैं। 'विश्लेषण' वाले हिस्से हमारी व्याख्या हैं, "
+                      "जो इन तथ्यों से निकाली गई है; वह तथ्य नहीं, राय है।",
+        "d_unconfirmed": "जो बातें सिर्फ़ एक स्रोत ने रिपोर्ट कीं या किसी ने आरोप के रूप में कहीं, उन्हें वीडियो में नाम लेकर बताया गया है।",
     },
 }
 
