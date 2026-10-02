@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>न्यूज़ चैनल स्टूडियो</title>
+<style>
+:root{--bg:#f4f5f8;--card:#fff;--ink:#14161f;--mute:#667085;--line:#e3e6ee;--brand:#d90429;--brand-ink:#fff;--ok:#12805c;--warn:#b45309;--bad:#c1121f;--chip:#eef0f6;--shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.05)}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1118;--card:#171b25;--ink:#eef0f6;--mute:#98a2b3;--line:#2a3040;--chip:#222838;--shadow:none}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,"Segoe UI","Noto Sans Devanagari","Kohinoor Devanagari",system-ui,sans-serif}
+header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.wrap{max-width:920px;margin:0 auto;padding:0 16px}
+.top{display:flex;align-items:center;gap:12px;padding:12px 0}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--brand);display:grid;place-items:center;color:#fff;font-weight:800}
+h1{font-size:18px;margin:0;line-height:1.2}
+.sub{font-size:12px;color:var(--mute)}
+nav{display:flex;gap:4px;overflow-x:auto}
+nav button{border:0;background:none;padding:10px 14px;font:inherit;color:var(--mute);border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+nav button.on{color:var(--ink);border-color:var(--brand);font-weight:700}
+main{padding:20px 0 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card h2{font-size:16px;margin:0 0 4px}
+.hint{color:var(--mute);font-size:13px;margin:0 0 12px}
+label.l{display:block;font-weight:600;font-size:14px;margin:12px 0 6px}
+input[type=text],input[type=password],textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:120px;resize:vertical}
+input:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:0}
+.seg{display:flex;gap:8px;flex-wrap:wrap}
+.seg label{flex:1;min-width:150px;border:1.5px solid var(--line);border-radius:12px;padding:12px;cursor:pointer}
+.seg input{display:none}
+.seg label.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 8%,transparent)}
+.seg b{display:block}.seg span{font-size:12px;color:var(--mute)}
+.btn{border:0;border-radius:10px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer;background:var(--chip);color:var(--ink)}
+.btn.primary{background:var(--brand);color:var(--brand-ink);font-size:17px;padding:14px 22px}
+.btn.ok{background:var(--ok);color:#fff}.btn.bad{background:none;color:var(--bad);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--mute);cursor:pointer}
+.drop.over{border-color:var(--brand);color:var(--ink)}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
+.thumbs div{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--chip)}
+.thumbs img{width:100%;height:100%;object-fit:cover}
+.thumbs button{position:absolute;top:4px;right:4px;border:0;border-radius:50%;width:22px;height:22px;background:rgba(0,0,0,.65);color:#fff;cursor:pointer}
+.clip{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;background:var(--bg)}
+.clip .g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.clip .g input{padding:8px 10px}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;background:var(--chip)}
+.pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.pill.bad{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+.pill.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.banner{border-radius:12px;padding:12px 14px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);margin-bottom:16px;font-size:14px}
+.topic{display:flex;gap:10px;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px;cursor:pointer}
+.topic.on{border-color:var(--brand)}
+.bar{height:10px;border-radius:99px;background:var(--chip);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--brand);width:0;transition:width .6s}
+pre.log{background:var(--bg);border-radius:10px;padding:10px;font-size:12px;max-height:150px;overflow:auto;white-space:pre-wrap;margin:10px 0 0}
+.vid{display:grid;grid-template-columns:200px 1fr;gap:16px}
+@media(max-width:640px){.vid{grid-template-columns:1fr}}
+video{width:100%;border-radius:10px;background:#000;max-height:360px}
+.issue{font-size:13px;margin:4px 0;padding-left:8px;border-left:3px solid var(--warn)}
+.issue.block{border-color:var(--bad);color:var(--bad)}
+.k{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-top:10px}
+.k small{color:var(--mute)}
+.hide{display:none!important}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none;z-index:9}
+.toast.on{opacity:1}
+details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="top"><div class="logo">N</div><div><h1 id="chan">न्यूज़ चैनल स्टूडियो</h1><div class="sub">खबर → हिंदी वीडियो, कुछ ही क्लिक में</div></div></div>
+  <nav>
+    <button data-tab="make" class="on">🎬 वीडियो बनाओ</button>
+    <button data-tab="videos">📋 मेरे वीडियो</button>
+    <button data-tab="settings">⚙️ सेटिंग / API Keys</button>
+  </nav>
+</div></header>
+
+<main class="wrap">
+
+<!-- ================= MAKE ================= -->
+<section id="tab-make">
+  <div id="setupBanner" class="banner hide">⚠️ पहले <b>सेटिंग</b> टैब में अपनी <b>OpenAI key</b> डालिए, तब असली वीडियो बनेगा।
+    (बिना key के सिर्फ़ <a href="#" id="demoLink">डेमो वीडियो</a> बन सकता है।)</div>
+
+  <div class="card">
+    <h2>1. खबर कौन-सी?</h2>
+    <p class="hint">अपनी खबर खुद लिखिए, या आज की असली खबरें अपने-आप मँगवाइए।</p>
+    <div class="seg" id="modeSeg">
+      <label class="on"><input type="radio" name="mode" value="manual" checked><b>✍️ अपनी खबर लिखूँगा</b><span>हेडलाइन + तथ्य आप डालें</span></label>
+      <label><input type="radio" name="mode" value="auto"><b>📰 आज की खबरें (auto)</b><span>कम से कम 2 न्यूज़ साइट पर छपी खबरें</span></label>
+    </div>
+
+    <div id="manualBox">
+      <label class="l" for="headline">हेडलाइन</label>
+      <input type="text" id="headline" placeholder="जैसे: संसद में बजट पर तीखी बहस">
+      <label class="l" for="text">खबर के तथ्य (जितना सही और साफ़, उतना अच्छा वीडियो)</label>
+      <textarea id="text" placeholder="कौन, क्या, कब, कहाँ… और स्रोत (जैसे: PTI के अनुसार…)। AI इन्हीं तथ्यों से स्क्रिप्ट लिखेगा, अपनी तरफ़ से कुछ नहीं जोड़ेगा।"></textarea>
+    </div>
+
+    <div id="autoBox" class="hide">
+      <div class="row" style="margin-top:12px"><button class="btn" id="fetchTopics">📰 आज की खबरें लाओ</button><span class="hint" id="topicMsg" style="margin:0"></span></div>
+      <div id="topicList"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. वीडियो का प्रकार</h2>
+    <div class="seg" id="fmtSeg">
+      <label class="on"><input type="radio" name="fmt" value="short" checked><b>📱 Short</b><span>खड़ा (9:16), करीब 1 मिनट</span></label>
+      <label><input type="radio" name="fmt" value="long"><b>🖥️ Long</b><span>लेटा (16:9), करीब 4-5 मिनट + ticker</span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. आपकी फ़ोटो (optional)</h2>
+    <p class="hint">असली फ़ोटो डालिए। <b>कौन-सी फ़ोटो कहाँ लगेगी, यह AI ख़ुद तय करेगा</b> और चेहरा फ्रेम में रखेगा। कम पड़ें तो stock फ़ोटो (Pexels key हो तो) जुड़ेंगी।</p>
+    <div class="drop" id="imgDrop">📷 फ़ोटो यहाँ खींचकर छोड़िए या क्लिक करके चुनिए<input type="file" id="imgInput" accept="image/*" multiple hidden></div>
+    <div class="thumbs" id="thumbs"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. भाषण / वीडियो क्लिप (optional)</h2>
+    <p class="hint">नेता का असली बयान जोड़ना हो तो क्लिप आप दीजिए (संसद TV, PIB, या आपकी अपनी रिकॉर्डिंग)। हम इंटरनेट से कॉपीराइट वीडियो अपने-आप डाउनलोड नहीं करते।</p>
+    <button class="btn" id="addClip">➕ क्लिप जोड़ो</button>
+    <div id="clips"></div>
+    <details><summary>क्लिप के नियम</summary><div class="hint" style="margin-top:6px">• हर क्लिप पर <b>स्रोत (Source)</b> लिखना ज़रूरी है — वीडियो पर "स्रोत: …" दिखेगा।<br>• एक क्लिप से ज़्यादा से ज़्यादा 30 सेकंड लिया जाता है, और पूरे वीडियो में क्लिप 40% से ज़्यादा नहीं हो सकतीं।<br>• समय "0:12" या "1:05" जैसा लिखिए। खाली छोड़ेंगे तो शुरुआत से लेंगे।</div></details>
+  </div>
+
+  <div class="row">
+    <button class="btn primary" id="go">🎬 वीडियो बनाओ</button>
+    <a href="#" id="demoLink2" class="hint" style="margin:0">बिना key के डेमो देखिए</a>
+  </div>
+
+  <div class="card hide" id="progCard" style="margin-top:16px">
+    <h2 id="progTitle">वीडियो बन रहा है…</h2>
+    <p class="hint" id="progStep">शुरू हो रहा है</p>
+    <div class="bar"><i id="barFill"></i></div>
+    <pre class="log" id="progLog"></pre>
+    <div id="doneBox" class="hide" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<!-- ================= VIDEOS ================= -->
+<section id="tab-videos" class="hide">
+  <div class="row" style="margin-bottom:12px"><button class="btn" id="reload">🔄 रिफ़्रेश</button><span class="hint" style="margin:0">देखिए, ठीक लगे तो Approve कीजिए। Approve किए बिना कुछ भी अपलोड नहीं होता।</span></div>
+  <div id="videoList"></div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section id="tab-settings" class="hide">
+  <div class="card">
+    <h2>API Keys</h2>
+    <p class="hint"><b>सिर्फ़ OpenAI key काफ़ी है</b> — स्क्रिप्ट, फ़ोटो चुनना, हिंदी आवाज़ और सबटाइटल सब उसी से होता है। बाकी keys optional हैं। Keys सिर्फ़ आपके कंप्यूटर की <code>.env</code> फ़ाइल में सेव होती हैं।</p>
+    <div id="keyForm"></div>
+    <div class="row" style="margin-top:16px"><button class="btn primary" id="saveKeys">💾 सेव करो</button></div>
+  </div>
+  <div class="card"><h2>सिस्टम जाँच</h2><div id="checks"></div></div>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),3200)}
+async function api(url, opts){const r=await fetch(url,opts);let j={};try{j=await r.json()}catch(e){}; if(!r.ok) throw Object.assign(new Error(j.error||r.statusText),{data:j,status:r.status}); return j}
+
+// ---- tabs
+$$('nav button').forEach(b=>b.onclick=()=>{ $$('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  ['make','videos','settings'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));
+  if(b.dataset.tab==='videos') loadVideos(); if(b.dataset.tab==='settings') loadStatus(); });
+function goTab(t){ $(`nav button[data-tab=${t}]`).click() }
+
+// ---- segmented radios
+function seg(id,cb){ $$('#'+id+' label').forEach(l=>l.onclick=()=>{ $$('#'+id+' label').forEach(x=>x.classList.remove('on')); l.classList.add('on'); l.querySelector('input').checked=true; cb&&cb(l.querySelector('input').value)})}
+seg('fmtSeg'); seg('modeSeg', v=>{ $('#manualBox').classList.toggle('hide',v!=='manual'); $('#autoBox').classList.toggle('hide',v!=='auto') });
+
+// ---- status / settings
+const KEYS = [
+ ['OPENAI_API_KEY','OpenAI API key','sk-… (स्क्रिप्ट + फ़ोटो चुनना + आवाज़ + सबटाइटल) — सबसे ज़रूरी'],
+ ['OPENAI_VOICE','OpenAI आवाज़ (voice)','onyx, ash, nova, alloy… (खाली = onyx)'],
+ ['ANTHROPIC_API_KEY','Anthropic (Claude) key','optional — स्क्रिप्ट के लिए दूसरा विकल्प'],
+ ['ELEVENLABS_API_KEY','ElevenLabs API key','optional — ज़्यादा natural हिंदी आवाज़'],
+ ['ELEVENLABS_VOICE_ID','ElevenLabs Voice ID','ElevenLabs चुना हो तो ज़रूरी'],
+ ['PEXELS_API_KEY','Pexels API key','optional, मुफ़्त — stock फ़ोटो के लिए'],
+ ['TELEGRAM_BOT_TOKEN','Telegram Bot token','optional — फ़ोन पर Approve के लिए'],
+ ['TELEGRAM_CHAT_ID','Telegram Chat ID','optional'],
+];
+let status = null;
+async function loadStatus(){
+  status = await api('/api/status');
+  $('#chan').textContent = status.channel;
+  $('#keyForm').innerHTML = KEYS.map(([k,name,help])=>`<div class="k"><div><b>${name}</b> <small>${help}</small>
+     <input type="${k.includes('KEY')||k.includes('TOKEN')?'password':'text'}" id="key_${k}" autocomplete="off" placeholder="${status.keys[k]?'••••••••  (सेव है — बदलना हो तभी लिखिए)':'यहाँ लिखिए'}"></div>
+     <span class="pill ${status.keys[k]?'ok':''}">${status.keys[k]?'✓ सेव है':'खाली'}</span></div>`).join('');
+  $('#checks').innerHTML = status.checks.map(c=>`<div class="row" style="margin:6px 0"><span class="pill ${c.ok?'ok':'bad'}">${c.ok?'✓ ठीक':'✗ कमी'}</span> ${esc(c.name)} ${c.ok?'':`<small class="hint" style="margin:0">— ${esc(c.help)}</small>`}</div>`).join('')
+    + (status.checks[2].ok ? `<p class="hint" style="margin-top:10px">अभी इस्तेमाल हो रहा: AI = <b>${status.llm_provider}</b>, आवाज़ = <b>${status.tts_provider}</b></p>`
+       : `<p class="hint" style="margin-top:10px">अभी कोई AI key नहीं डाली है।</p>`);
+  const ready = status.checks.slice(2).every(c=>c.ok) && status.checks[0].ok;
+  $('#setupBanner').classList.toggle('hide', ready);
+}
+$('#saveKeys').onclick = async()=>{
+  const body={}; KEYS.forEach(([k])=>{const v=$('#key_'+k).value.trim(); if(v) body[k]=v});
+  if(!Object.keys(body).length) return toast('कुछ नया लिखा ही नहीं');
+  await api('/api/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  toast('✓ Keys सेव हो गईं'); loadStatus();
+};
+
+// ---- photos
+let images=[];   // File[]
+function renderThumbs(){ $('#thumbs').innerHTML=''; images.forEach((f,i)=>{const d=document.createElement('div'); const im=document.createElement('img'); im.src=URL.createObjectURL(f);
+  const b=document.createElement('button'); b.textContent='×'; b.onclick=()=>{images.splice(i,1);renderThumbs()}; d.append(im,b); $('#thumbs').append(d)}) }
+function addImages(list){ images.push(...[...list].filter(f=>f.type.startsWith('image/'))); renderThumbs() }
+$('#imgDrop').onclick=()=>$('#imgInput').click(); $('#imgInput').onchange=e=>{addImages(e.target.files);e.target.value=''};
+['dragover','dragenter'].forEach(ev=>$('#imgDrop').addEventListener(ev,e=>{e.preventDefault();$('#imgDrop').classList.add('over')}));
+['dragleave','drop'].forEach(ev=>$('#imgDrop').addEventListener(ev,e=>{e.preventDefault();$('#imgDrop').classList.remove('over')}));
+$('#imgDrop').addEventListener('drop',e=>addImages(e.dataTransfer.files));
+
+// ---- clips
+let clips=[];  // {file,start,end,credit,note}
+function renderClips(){ $('#clips').innerHTML=''; clips.forEach((c,i)=>{ const d=document.createElement('div'); d.className='clip';
+  d.innerHTML=`<div class="row"><b>🎞️ ${esc(c.file.name)}</b><button class="btn bad" style="margin-left:auto;padding:4px 10px">हटाओ</button></div>
+   <div class="g"><input type="text" placeholder="कहाँ से (जैसे 0:12)" value="${esc(c.start)}" data-f="start"><input type="text" placeholder="कहाँ तक (जैसे 0:38)" value="${esc(c.end)}" data-f="end">
+   <input type="text" placeholder="स्रोत* (जैसे: Sansad TV)" value="${esc(c.credit)}" data-f="credit"><input type="text" placeholder="यह क्लिप क्या है (संदर्भ)" value="${esc(c.note)}" data-f="note"></div>`;
+  d.querySelectorAll('input').forEach(inp=>inp.oninput=()=>c[inp.dataset.f]=inp.value); d.querySelector('button').onclick=()=>{clips.splice(i,1);renderClips()}; $('#clips').append(d)})}
+$('#addClip').onclick=()=>{const inp=document.createElement('input');inp.type='file';inp.accept='video/*';inp.onchange=()=>{ if(inp.files[0]){clips.push({file:inp.files[0],start:'',end:'',credit:'',note:''});renderClips()}};inp.click()};
+
+// ---- topics
+let topicId=null;
+$('#fetchTopics').onclick=async()=>{ $('#topicMsg').textContent='खबरें ढूँढ रहे हैं… (30 सेकंड तक लग सकते हैं)'; $('#topicList').innerHTML='';
+  try{ const r=await api('/api/topics',{method:'POST'}); $('#topicMsg').textContent=r.topics.length?`${r.topics.length} खबरें मिलीं — एक चुनिए`:'अभी ऐसी कोई खबर नहीं जो कम से कम 2 साइट पर हो';
+    $('#topicList').innerHTML=r.topics.map(t=>`<label class="topic" data-id="${t.id}"><input type="radio" name="topic"><div><b>${esc(t.title)}</b><div class="hint" style="margin:0">${esc(t.sources.join(', '))}${t.why?' — '+esc(t.why):''}</div></div></label>`).join('');
+    $$('.topic').forEach(l=>l.onclick=()=>{topicId=l.dataset.id;$$('.topic').forEach(x=>x.classList.toggle('on',x===l))});
+  }catch(e){ $('#topicMsg').textContent='❌ '+e.message } };
+
+// ---- create
+async function startJob(demo){
+  const fd=new FormData(); const mode=$('input[name=mode]:checked').value;
+  fd.append('format',$('input[name=fmt]:checked').value);
+  if(demo) fd.append('demo','1');
+  else if(mode==='auto'){ if(!topicId) return toast('पहले कोई खबर चुनिए'); fd.append('topic_id',topicId) }
+  else { if(!$('#headline').value.trim()) return toast('हेडलाइन लिखिए'); fd.append('headline',$('#headline').value); fd.append('text',$('#text').value) }
+  if(!demo){ images.forEach(f=>fd.append('images',f));
+    for(const c of clips){ if(!c.credit.trim()) return toast('हर क्लिप का स्रोत (Source) लिखना ज़रूरी है'); fd.append('clips',c.file) }
+    fd.append('clip_meta',JSON.stringify(clips.map(({start,end,credit,note})=>({start,end,credit,note})))) }
+  $('#go').disabled=true; $('#progCard').classList.remove('hide'); $('#doneBox').classList.add('hide'); $('#progTitle').textContent='वीडियो बन रहा है…'; $('#barFill').style.width='3%'; $('#progLog').textContent=''; $('#progStep').textContent='फ़ाइलें भेज रहे हैं…';
+  $('#progCard').scrollIntoView({behavior:'smooth'});
+  try{ const {job}=await api('/api/create',{method:'POST',body:fd}); poll(job) }
+  catch(e){ $('#go').disabled=false; $('#progTitle').textContent='❌ शुरू नहीं हो पाया'; $('#progStep').textContent=e.message }
+}
+const STEP_TXT=[['rendering','🎞️ वीडियो रेंडर हो रहा है (सबसे ज़्यादा समय यहीं लगता है)'],['choosing','🖼️ AI फ़ोटो चुनकर सजा रहा है'],['synthesizing','🔊 हिंदी आवाज़ बन रही है'],['writing script','✍️ हिंदी स्क्रिप्ट लिखी जा रही है'],['clips','🎞️ क्लिप तैयार हो रही है']];
+async function poll(id){
+  const j=await api('/api/jobs/'+id); $('#barFill').style.width=Math.max(4,j.progress)+'%'; $('#progLog').textContent=j.logs.join('\n');
+  const last=j.logs.join(' '); const s=STEP_TXT.find(([k])=>last.includes(k)); if(s) $('#progStep').textContent=s[1]+` · ${j.seconds}s`;
+  if(j.status==='done'){ $('#go').disabled=false; $('#barFill').style.width='100%'; $('#progTitle').textContent='✅ वीडियो तैयार!'; $('#progStep').textContent='';
+    const iss=j.result.issues||[]; const blocks=iss.filter(i=>i.level==='block');
+    $('#doneBox').classList.remove('hide'); $('#doneBox').innerHTML=`<b>${esc(j.result.title)}</b>`+
+      (blocks.length?`<div class="issue block">⚠️ ${blocks.length} समस्या — Approve से पहले ठीक करनी होगी:<br>${blocks.map(b=>esc(b.msg)).join('<br>')}</div>`:'')+
+      `<div class="row" style="margin-top:10px"><button class="btn primary" id="seeVid">▶️ वीडियो देखिए</button></div>`;
+    $('#seeVid').onclick=()=>goTab('videos'); return }
+  if(j.status==='error'){ $('#go').disabled=false; $('#progTitle').textContent='❌ गड़बड़ हो गई'; $('#progStep').textContent=j.error; return }
+  setTimeout(()=>poll(id),1500);
+}
+$('#go').onclick=()=>startJob(false);
+['#demoLink','#demoLink2'].forEach(s=>$(s).onclick=e=>{e.preventDefault();startJob(true)});
+
+// ---- my videos
+const ST={pending:['इंतज़ार में (देखिए)','warn'],approved:['Approve ✓','ok'],rejected:['Reject','bad'],published:['YouTube पर ✓','ok']};
+async function loadVideos(){
+  const {videos}=await api('/api/videos');
+  $('#videoList').innerHTML=videos.length?'':'<div class="card hint">अभी कोई वीडियो नहीं। पहले "वीडियो बनाओ" टैब में बनाइए।</div>';
+  videos.forEach(v=>{ const [stT,stC]=ST[v.status]||[v.status,'']; const d=document.createElement('div'); d.className='card';
+    const issues=(v.issues||[]).map(i=>`<div class="issue ${i.level==='block'?'block':''}">${i.level==='block'?'🚫':'⚠️'} ${esc(i.msg)}</div>`).join('');
+    d.innerHTML=`<div class="vid"><video controls preload="metadata" poster="${v.thumb_url}" src="${v.video_url}" ${v.format==='short'?'style="max-height:420px"':''}></video>
+      <div><div class="row"><b style="font-size:17px">${esc(v.title)}</b></div><div class="row" style="margin:6px 0"><span class="pill ${stC}">${stT}</span><span class="pill">${v.format==='short'?'📱 Short':'🖥️ Long'}</span><span class="pill">${Math.round(v.duration)}s</span></div>
+      ${issues}
+      <div class="row" style="margin-top:12px">
+        ${v.status==='pending'||v.status==='rejected'?`<button class="btn ok" data-a="approve">✅ Approve</button>`:''}
+        ${v.status==='pending'?`<button class="btn bad" data-a="reject">Reject</button>`:''}
+        ${v.status==='approved'?`<button class="btn primary" data-a="publish">📤 YouTube पर डालो</button>`:''}
+        <a class="btn" href="${v.video_url}" download="${esc(v.id)}.mp4">⬇️ Download</a>
+        <button class="btn" data-a="copy">📋 Description कॉपी</button></div>
+      <details><summary>Description देखिए</summary><pre class="log">${esc(v.description)}</pre></details></div></div>`;
+    d.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>videoAction(v,b.dataset.a)); $('#videoList').append(d)});
+}
+async function videoAction(v,a){
+  try{
+    if(a==='copy'){ await navigator.clipboard.writeText(v.description); return toast('Description कॉपी हो गया') }
+    if(a==='publish'){ const r=await api(`/api/videos/${v.id}/publish`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); toast('✅ अपलोड हुआ: '+r.url); return loadVideos() }
+    let force=false;
+    try{ await api(`/api/videos/${v.id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a})}) }
+    catch(e){ if(e.status===409 && confirm('इस वीडियो में समस्याएँ मिली हैं:\n\n'+e.data.issues.map(i=>'• '+i.msg).join('\n')+'\n\nफिर भी Approve करें? (जोखिम आपका)')){
+        await api(`/api/videos/${v.id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,force:true})}) } else if(e.status!==409) throw e; else return }
+    toast(a==='approve'?'✅ Approve हो गया':'Reject कर दिया'); loadVideos();
+  }catch(e){ toast('❌ '+e.message) }
+}
+$('#reload').onclick=loadVideos;
+loadStatus();
+</script>
+</body>
+</html>

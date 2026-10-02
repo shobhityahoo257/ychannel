@@ -47,6 +47,12 @@ def cmd_demo(cfg: Config, a) -> int:
     return 0
 
 
+def cmd_ui(cfg: Config, a) -> int:
+    from .webui import serve
+    serve(a.port, not a.no_browser, a.config)
+    return 0
+
+
 def cmd_fetch(cfg: Config, a) -> int:
     stories = sources.fetch_stories(cfg["feeds"], cfg["curation"]["max_age_hours"])
     store = Store(cfg.path(cfg["youtube"]["output_dir"]))
@@ -143,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="newschannel")
     ap.add_argument("--config")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    ui = sub.add_parser("ui", help="open the point-and-click web app in your browser")
+    ui.add_argument("--port", type=int, default=8765); ui.add_argument("--no-browser", action="store_true")
     sub.add_parser("doctor")
     dm = sub.add_parser("demo", help="render a sample video without any API keys")
     dm.add_argument("--format", choices=["short", "long"], default="short"); dm.add_argument("--out")
@@ -161,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("stats")
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
-    return {"doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
+    return {"ui": cmd_ui, "doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
             "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats}[a.cmd](cfg, a)
 
 

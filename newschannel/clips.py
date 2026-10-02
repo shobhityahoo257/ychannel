@@ -71,6 +71,8 @@ def read_spec(folder: Path) -> dict[str, dict[str, Any]]:
         if m:
             d["start"], d["end"] = parse_time(m.group(1)), parse_time(m.group(2))
             fields = fields[1:]
+        elif fields and fields[0] == "":          # no time range given: `file: | credit | note`
+            fields = fields[1:]
         if fields:
             d["credit"] = fields[0]
         if len(fields) > 1:

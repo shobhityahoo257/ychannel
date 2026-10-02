@@ -16,6 +16,14 @@ and clip subtitles (Whisper). Or use Anthropic (scripts/photos) and/or ElevenLab
 `provider: auto` in `config.yaml` uses whichever keys are in `.env`; force one with `llm.provider` / `tts.provider`.
 Pick an OpenAI voice with `OPENAI_VOICE` (try `onyx`, `ash`, `nova`) and change the anchor style in `tts.openai_instructions`.
 
+## Easiest way: the web app
+```bash
+python -m newschannel ui        # opens http://127.0.0.1:8765 in your browser
+```
+Three tabs: **वीडियो बनाओ** (type a story or pick today's news, drag in photos/clips, one button),
+**मेरे वीडियो** (watch, Approve/Reject, download, upload), **सेटिंग** (paste API keys — saved to `.env`, never shown again).
+It only listens on your own computer. First time? Click "डेमो वीडियो" to test without any key.
+
 ## Setup
 ```bash
 pip install -r requirements.txt          # also needs ffmpeg + libraqm (see deploy/Dockerfile)

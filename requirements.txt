@@ -7,3 +7,4 @@ pyyaml>=6.0
 google-api-python-client>=2.100
 google-auth-oauthlib>=1.2
 pytest>=8.0
+flask>=3.0
