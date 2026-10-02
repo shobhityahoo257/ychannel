@@ -170,6 +170,40 @@ def cmd_endscreen(cfg: Config, a) -> int:
     return 0
 
 
+def cmd_study(cfg: Config, a) -> int:
+    from .study import report
+    raw = Path(a.file).read_text(encoding="utf-8") if a.file != "-" else sys.stdin.read()
+    text = report(raw)
+    if a.out:
+        Path(a.out).write_text(text, encoding="utf-8")
+        print(f"report saved to {a.out}")
+    print(text)
+    return 0
+
+
+def cmd_deep(cfg: Config, a) -> int:
+    from . import analysis
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    client = _client(cfg)
+    notes = Path(a.notes_file).read_text(encoding="utf-8") if a.notes_file else (a.notes or "")
+    res = analysis.run_research(cfg, client, store, a.headline, a.url or [], notes)
+    rec = res["recommend"]
+    print(f"\nVerified claims: {res['usable']} {res['counts']}")
+    print(f"Recommended angle: {rec['stance']} - {rec['why']}")
+    print(f"Recommended length: {rec['minutes']} min - {rec.get('minutes_why', '')}")
+    print(f"Research id: {res['research_id']}  (ledger: {store.root / '_research' / res['research_id'] / 'ledger.json'})")
+    if a.research_only:
+        return 0
+    if not res["enough"]:
+        print("Not enough verified material to write a video. Add more sources.")
+        return 1
+    meta = analysis.make_video(cfg, client, make_tts(cfg), store, res["research_id"], a.stance, a.minutes, a.language,
+                               a.music, [Path(p) for p in (a.images or [])])
+    blocks = [i["msg"] for i in meta["issues"] if i["level"] == "block"]
+    print(f"\n-> {meta['video']}" + (f"\nBLOCKED until fixed: {blocks}" if blocks else "\nPassed the automatic fact check."))
+    return 0
+
+
 def cmd_schedule(cfg: Config, a) -> int:
     from .scheduler import run_forever
     run_forever(cfg)
@@ -213,11 +247,20 @@ def main(argv: list[str] | None = None) -> int:
     br.add_argument("--dry-run", action="store_true", help="with --once: only show what would trigger")
     sub.add_parser("playlists", help="create your category/format playlists on YouTube")
     sub.add_parser("endscreen", help="list published long videos that still need an end screen set up in Studio")
+    st = sub.add_parser("study", help="analyse a reference video from its pasted transcript")
+    st.add_argument("file", help="transcript text file, or - for stdin"); st.add_argument("--out")
+    dp = sub.add_parser("deep", help="make a fact-checked deep-analysis video")
+    dp.add_argument("--headline", required=True); dp.add_argument("--url", action="append", help="source link (repeat)")
+    dp.add_argument("--notes"); dp.add_argument("--notes-file")
+    dp.add_argument("--stance", default="auto", choices=["auto", "neutral", "critical", "supportive"])
+    dp.add_argument("--minutes", default="auto", help="number of minutes, or auto")
+    dp.add_argument("--language", choices=["hinglish", "hindi"]); dp.add_argument("--music", choices=["auto", "calm", "tension", "warm", "off"])
+    dp.add_argument("--images", nargs="*"); dp.add_argument("--research-only", action="store_true")
     sub.add_parser("schedule", help="run unattended: produce, collect approvals and publish at set times")
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
     return {"ui": cmd_ui, "doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
-            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "breaking": cmd_breaking, "playlists": cmd_playlists, "endscreen": cmd_endscreen}[a.cmd](cfg, a)
+            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "study": cmd_study, "deep": cmd_deep, "breaking": cmd_breaking, "playlists": cmd_playlists, "endscreen": cmd_endscreen}[a.cmd](cfg, a)
 
 
 if __name__ == "__main__":

@@ -83,7 +83,8 @@ def fetch_article(url: str, timeout: int = 20) -> tuple[str, str, str]:
 
 def gather_sources(cfg: Any, topic: Topic, urls: list[str] | None = None, notes: str = "",
                    max_sources: int = 10, log: Callable[[str], None] = print,
-                   fetch: Callable[[str], tuple[str, str, str]] = fetch_article) -> list[Source]:
+                   fetch: Callable[[str], tuple[str, str, str]] | None = None) -> list[Source]:
+    fetch = fetch or fetch_article
     sc = cfg.get("analysis", {}).get("sources", {})
     t1, t2 = sc.get("tier1"), sc.get("tier2")
     links: list[str] = []

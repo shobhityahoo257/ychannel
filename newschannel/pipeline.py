@@ -45,7 +45,8 @@ def brand_from(cfg: Config) -> render.Brand:
 
 def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_seconds: float,
                   extra: list[Path], log: Callable[[str], None], library_ids: list[str] | None = None,
-                  client: Any = None, model: str = "", vision_model: str = "") -> tuple[list[Asset], list[str]]:
+                  client: Any = None, model: str = "", vision_model: str = "",
+                  card_size: tuple[int, int] = (1080, 1920)) -> tuple[list[Asset], list[str]]:
     """Order of preference: photos you upload now -> photos you picked from the library ->
     library photos the AI finds relevant -> stock. Returns (assets, library ids used)."""
     img = cfg["images"]
@@ -93,7 +94,8 @@ def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_se
         log(f"after stock fallback: {len(assets)}")
     if not assets:   # last resort: clean headline cards (clearly graphics, never fake photos)
         brand = brand_from(cfg)
-        fmt_w, fmt_h = 1080, 1920
+        fmt_w, fmt_h = card_size
+        (run / "images").mkdir(parents=True, exist_ok=True)
         for i, sc in enumerate(script.scenes):
             p = render.make_card(run / "images" / f"card_{i}.jpg", fmt_w, fmt_h, brand, sc.headline)
             assets.append(Asset(f"card{i}", str(p), "graphic", fmt_w, fmt_h, sc.headline))
@@ -185,7 +187,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     # 3. pictures: user images first, stock fallback, AI picks + arranges
     clip_total = sum(a.duration for a, sc in zip(audios, script.scenes) if sc.kind == "clip")
     assets, lib_used = gather_assets(cfg, topic, script, run, total - clip_total, extra_images or [], log,
-                                     library_ids, client, model, vision_model)
+                                     library_ids, client, model, vision_model, (fmt.width, fmt.height))
     by_id = {a.id: a for a in assets}
     log("choosing and arranging photos…")
     plan = planner.make_plan(client, vision_model, script.scenes, assets,

@@ -63,6 +63,32 @@ normalises loudness, keeps the original audio, transcribes the speech (ElevenLab
 in the description. The script writer introduces the clip and analyses it afterwards; clips may be at most 40% of the video,
 and a clip without a credit blocks publishing.
 
+## Deep-analysis videos (researched, fact-bound, 6-15 minutes)
+Open the **Deep analysis** tab (or `python -m newschannel deep --headline "..." --url <link> --url <link>`).
+1. **Research & fact-check** - give a topic and source links (PIB, ministries, courts, major outlets) or pick a story from today's news.
+   The app reads every source, extracts claims, and **verifies in code** that each claim's supporting sentence appears word-for-word in
+   its source, that numbers match, and that quotes are verbatim. Claims get a status: **Confirmed** (official source, or 2+ outlets),
+   **Quote**, **Reported by 1 outlet**, **Alleged**, **Disputed** (sources disagree) or **Unverified** (never used).
+2. **Decide the angle and length** - *Neutral*, *Critical* or *Complementary*, all fact-based; or accept the tool's recommendation, which comes
+   only from the evidence balance in the ledger. Length 6/9/12/15 minutes, a custom number, or the recommendation.
+3. **Create** - the script is written from the ledger only, then checked automatically: every fact cites ledger claims, numbers come from those
+   claims, claims that are not independently confirmed must name their outlet or speaker, quotes must be word-for-word, mind-reading and hearsay
+   wording is rejected, Critical/Complementary videos must include a counterpoint scene. Failures trigger up to 3 automatic rewrites; if problems
+   remain the video is **blocked from approval** and the reasons are shown.
+Extras: quote / number / timeline cards built from the ledger, an on-screen "Source: ..." tag, a mood-matched royalty-free music bed that swells at
+section changes (or your own tracks in `assets/music`), chapters and a tiered source list in the description, an "As of <time> IST" stamp.
+Every video keeps its ledger (My videos -> Fact ledger & sources). Source quality: official (`*.gov.in`, PIB, Sansad, ECI, RBI, courts) > major
+outlets and agencies > everything else (blogs and your own notes can never be the only support for a fact). Edit the lists under `analysis:` in `config.yaml`.
+
+## Languages
+`content.language` in `config.yaml` (and a switch in the web app): **Hinglish** (default; Hindi grammar with English words in Roman script, e.g.
+"Kya sarkar ne ek hi din mein apna stand badal diya?") or **Hindi** (Devanagari). It controls the script, captions, on-screen labels, thumbnails,
+descriptions, playlists names and the voice instructions. If a voice pronounces Roman Hinglish oddly, try another voice or the Hindi setting.
+
+## Study a reference video
+Copy a video's transcript (YouTube -> ... -> Show transcript) into a text file and run `python -m newschannel study transcript.txt`: pacing, hook,
+delivery techniques worth borrowing, and a list of things our fact rules would not allow (unnamed sources, mind-reading, loaded words).
+
 ## Growth features
 * **Hook / title / thumbnail packaging** — for every video the AI proposes 5 opening hooks, 5 titles and 3 thumbnail texts, scores them,
   and uses the best ones that pass fact-safety checks (no invented numbers). All options are kept: pick another title or
@@ -99,6 +125,8 @@ and a clip without a credit blocks publishing.
 | `review list / show ID / approve ID / reject ID` | approval queue (`review listen` handles Telegram buttons) |
 | `publish [--publish-at 2026-10-03T07:30:00Z]` | upload approved videos |
 | `insights [--sync]` | what worked on your channel; lessons feed the next scripts |
+| `deep --headline ... --url ...` | researched, fact-checked analysis video (`--research-only` to stop after the ledger) |
+| `study transcript.txt` | analyse a reference video's structure and techniques |
 | `breaking [--once] [--dry-run]` | watch for breaking political news and prepare a Short for approval |
 | `playlists` | create your topic/format playlists on YouTube |
 | `endscreen` | list published long videos that still need an end screen set up in Studio |

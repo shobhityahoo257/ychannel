@@ -21,6 +21,7 @@ from . import curate as C
 from .config import ROOT, Config
 from .llm import make_client
 from .library import Library
+from . import analysis as analysis_mod
 from .models import Topic
 from .pipeline import manual_topic, produce
 from .review import Store
@@ -32,10 +33,13 @@ IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 VID_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
 STEPS = ["clips", "writing script", "synthesizing voice", "user images", "choosing and arranging",
          "rendering"]
+RESEARCH_STEPS = ["fetching sources", "extracting claims", "cross-checking", "deciding angle"]
+ANALYSIS_STEPS = ["writing the", "polishing", "synthesizing voice", "choosing and arranging", "rendering"]
 
 
 class Job:
-    def __init__(self, label: str):
+    def __init__(self, label: str, steps: list[str] | None = None):
+        self.steps = steps or STEPS
         self.id = uuid.uuid4().hex[:10]
         self.label = label
         self.status = "queued"          # queued | running | done | error
@@ -51,10 +55,10 @@ class Job:
         if self.status == "done":
             return 100
         hit = 0
-        for i, key in enumerate(STEPS, 1):
+        for i, key in enumerate(self.steps, 1):
             if any(key in line for line in self.logs):
                 hit = i
-        return int(100 * hit / (len(STEPS) + 1))
+        return int(100 * hit / (len(self.steps) + 1))
 
     def public(self) -> dict[str, Any]:
         return {"id": self.id, "label": self.label, "status": self.status, "logs": self.logs[-12:],
@@ -315,7 +319,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
 
     # ----- create a video
     def run_job(job: Job, topic: Topic, fmt: str, img_dir: Path, clip_dir: Path | None, demo: bool,
-                library_ids: list[str] | None = None) -> None:
+                library_ids: list[str] | None = None, language: str | None = None) -> None:
         with run_lock:
             job.status = "running"
             try:
@@ -328,7 +332,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 else:
                     meta = produce(c, topic, fmt, make_client(c), make_tts(c), store(),
                                    [img_dir], log=job.log, clip_folders=[clip_dir] if clip_dir else None,
-                                   library_ids=library_ids)
+                                   library_ids=library_ids, language=language)
                 job.result = {"id": meta["id"], "title": meta["title"], "issues": meta["issues"]}
                 job.status = "done"
             except Exception as exc:
@@ -377,9 +381,116 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             (clip_dir / "clips.txt").write_text("\n".join(spec), encoding="utf-8")
         jobs[job.id] = job
         lib_ids = [i for i in json.loads(f.get("library_ids", "[]")) if isinstance(i, str)]
-        threading.Thread(target=run_job, args=(job, topic, fmt, img_dir, clip_dir if spec else None, demo, lib_ids),
+        language = f.get("language") if f.get("language") in ("hinglish", "hindi") else None
+        threading.Thread(target=run_job, args=(job, topic, fmt, img_dir, clip_dir if spec else None, demo, lib_ids, language),
                          daemon=True).start()
         return jsonify({"job": job.id})
+
+    # ----- deep analysis: step 1 research + fact-check, step 2 create
+    @app.post("/api/analysis/research")
+    def analysis_research():
+        body = request.get_json(force=True) or {}
+        headline = (body.get("headline") or "").strip()
+        urls = body.get("urls") or []
+        if isinstance(urls, str):
+            urls = [u.strip() for u in urls.splitlines() if u.strip()]
+        topic = topics.get(body.get("topic_id", "")) if body.get("topic_id") else None
+        if topic is not None:
+            headline = headline or topic.title
+        if not headline:
+            return jsonify({"error": "A headline / topic is required."}), 400
+        if not (urls or topic or (body.get("notes") or "").strip()):
+            return jsonify({"error": "Add at least one source link, pick a news story, or paste notes."}), 400
+        job = Job(headline, RESEARCH_STEPS)
+        jobs[job.id] = job
+
+        def work():
+            job.status = "running"
+            try:
+                c = cfg()
+                res = analysis_mod.run_research(c, make_client(c), store(), headline, urls, body.get("notes") or "",
+                                                topic, job.log)
+                job.result = res
+                job.status = "done"
+            except Exception as exc:
+                job.status, job.error = "error", f"{type(exc).__name__}: {exc}"
+
+        threading.Thread(target=work, daemon=True).start()
+        return jsonify({"job": job.id})
+
+    @app.get("/api/analysis/research/<rid>")
+    def analysis_research_get(rid: str):
+        if not rid.isalnum():
+            abort(404)
+        try:
+            led, rec = analysis_mod.load_research(store(), rid)
+        except OSError:
+            abort(404)
+        return jsonify({"research_id": rid, "headline": led.topic, "recommend": rec, "counts": led.counts(),
+                        "usable": len(led.usable()), "enough": len(led.usable()) >= analysis_mod.MIN_USABLE_CLAIMS,
+                        "ledger": led.to_json()})
+
+    @app.post("/api/analysis/create")
+    def analysis_create():
+        if run_lock.locked():
+            return jsonify({"error": "A video is already being made. Please wait until it finishes."}), 409
+        f = request.form
+        rid = f.get("research_id", "")
+        if not rid.isalnum():
+            return jsonify({"error": "Run the research step first."}), 400
+        try:
+            led, _ = analysis_mod.load_research(store(), rid)
+        except OSError:
+            return jsonify({"error": "Research not found. Run the research step again."}), 400
+        stance, minutes = f.get("stance", "auto"), f.get("minutes", "auto")
+        if stance not in ("auto", "neutral", "critical", "supportive"):
+            return jsonify({"error": "Unknown angle."}), 400
+        if minutes != "auto":
+            try:
+                float(minutes)
+            except ValueError:
+                return jsonify({"error": "Length must be a number of minutes or 'auto'."}), 400
+        language = f.get("language") or None
+        if language not in (None, "hinglish", "hindi"):
+            return jsonify({"error": "Language must be hinglish or hindi."}), 400
+        job = Job(led.topic, ANALYSIS_STEPS)
+        work_dir = ROOT / "uploads" / job.id
+        img_dir = work_dir / "images"
+        img_dir.mkdir(parents=True)
+        for file in request.files.getlist("images"):
+            ext = Path(file.filename or "").suffix.lower()
+            if ext in IMG_EXT:
+                file.save(img_dir / f"{uuid.uuid4().hex[:8]}{ext}")
+        lib_ids = [i for i in json.loads(f.get("library_ids", "[]")) if isinstance(i, str)]
+        jobs[job.id] = job
+
+        def work():
+            with run_lock:
+                job.status = "running"
+                try:
+                    c = cfg()
+                    meta = analysis_mod.make_video(c, make_client(c), make_tts(c), store(), rid, stance, minutes, language,
+                                                   f.get("music") or None, [img_dir], lib_ids, log=job.log)
+                    job.result = {"id": meta["id"], "title": meta["title"], "issues": meta["issues"]}
+                    job.status = "done"
+                except Exception as exc:
+                    job.status, job.error = "error", f"{type(exc).__name__}: {exc}"
+                finally:
+                    shutil.rmtree(work_dir, ignore_errors=True)
+
+        threading.Thread(target=work, daemon=True).start()
+        return jsonify({"job": job.id})
+
+    @app.get("/api/videos/<rid>/ledger")
+    def video_ledger(rid: str):
+        from .ledger import Ledger
+        if not rid.replace("-", "").isalnum():
+            abort(404)
+        p = store().root / rid / "ledger.json"
+        if not p.exists():
+            return jsonify({"error": "This video has no fact ledger."}), 404
+        m = store().meta(rid)
+        return jsonify({"ledger": Ledger.load(p).to_json(), "analysis": m.get("analysis"), "issues": m.get("issues", [])})
 
     @app.get("/api/jobs/<jid>")
     def job_status(jid: str):
@@ -396,7 +507,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             out.append({k: m.get(k) for k in ("id", "title", "status", "format", "duration", "issues", "clips",
                                                "description", "video_id", "created", "title_options", "hook",
                                                "hook_options", "thumb_choice", "category", "playlists",
-                                               "playlist_error", "endscreen_done")}
+                                               "playlist_error", "endscreen_done", "analysis", "language")}
                        | {"video_url": f"/files/{m['id']}/video.mp4", "thumb_url": f"/files/{m['id']}/thumbnail.jpg",
                           "thumb_variants": [{"url": f"/files/{m['id']}/{Path(t['file']).name}", "text": t["text"]}
                                              for t in m.get("thumbnails", [])]})

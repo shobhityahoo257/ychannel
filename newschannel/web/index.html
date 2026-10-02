@@ -88,6 +88,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
   <div class="top"><div class="logo">N</div><div><h1 id="chan">News Channel Studio</h1><div class="sub" id="chanSub">Turn a news story into a Hindi video in a few clicks</div></div></div>
   <nav>
     <button data-tab="make" class="on">🎬 Create video</button>
+    <button data-tab="analysis">🔎 Deep analysis</button>
     <button data-tab="videos">📋 My videos</button>
     <button data-tab="library">🖼️ Photo library</button>
     <button data-tab="settings">⚙️ Settings / API keys</button>
@@ -128,6 +129,11 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
       <label class="on"><input type="radio" name="fmt" value="short" checked><b>📱 Short</b><span>Vertical (9:16), about 1 minute</span></label>
       <label><input type="radio" name="fmt" value="long"><b>🖥️ Long</b><span>Horizontal (16:9), about 4-5 minutes + news ticker</span></label>
     </div>
+    <label class="l">Language of the video</label>
+    <div class="seg" id="langSeg">
+      <label class="on"><input type="radio" name="lang" value="hinglish" checked><b>Hinglish</b><span>Hindi + English words, Roman script</span></label>
+      <label><input type="radio" name="lang" value="hindi"><b>Hindi</b><span>Devanagari script</span></label>
+    </div>
   </div>
 
   <div class="card">
@@ -165,6 +171,93 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
     <div class="bar"><i id="barFill"></i></div>
     <pre class="log" id="progLog"></pre>
     <div id="doneBox" class="hide" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<!-- ================= DEEP ANALYSIS ================= -->
+<section id="tab-analysis" class="hide">
+  <div class="card">
+    <h2>Deep analysis video</h2>
+    <p class="hint">Not just news: a researched explainer. The app reads your sources, extracts every claim, <b>checks each one against its source in code</b>, and only then writes the video. Every fact on screen traces back to a source; analysis is labelled as our interpretation.</p>
+  </div>
+
+  <div class="card">
+    <h2>Step 1 · What to analyse</h2>
+    <div class="seg" id="aModeSeg">
+      <label class="on"><input type="radio" name="amode" value="own" checked><b>🔗 My topic and sources</b><span>Headline + links (PIB, courts, newspapers)</span></label>
+      <label><input type="radio" name="amode" value="news"><b>📰 Pick from today's news</b><span>Stories reported by 2+ outlets</span></label>
+    </div>
+    <div id="aOwn">
+      <label class="l" for="aHeadline">Topic / headline</label>
+      <input type="text" id="aHeadline" placeholder="e.g. 15% MSP hike for wheat: relief or election move?">
+      <label class="l" for="aUrls">Source links, one per line (official sources count most)</label>
+      <textarea id="aUrls" style="min-height:110px" placeholder="https://pib.gov.in/...&#10;https://www.thehindu.com/...&#10;https://indianexpress.com/..."></textarea>
+      <label class="l" for="aNotes">Your own notes (optional; notes alone are never treated as confirmed)</label>
+      <textarea id="aNotes" style="min-height:70px" placeholder="Anything you know that the sources should confirm"></textarea>
+    </div>
+    <div id="aNews" class="hide">
+      <div class="row" style="margin-top:12px"><button class="btn" id="aFetchTopics">📰 Get today's news</button><span class="hint" id="aTopicMsg" style="margin:0"></span></div>
+      <div id="aTopicList"></div>
+      <label class="l" for="aUrls2">Extra source links (optional, one per line)</label>
+      <textarea id="aUrls2" style="min-height:70px"></textarea>
+    </div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" id="aResearch">🔎 Research &amp; fact-check</button></div>
+  </div>
+
+  <div class="card hide" id="aProg1"><h2 id="aP1Title">Researching...</h2><p class="hint" id="aP1Step">Starting</p>
+    <div class="bar"><i id="aP1Bar"></i></div><pre class="log" id="aP1Log"></pre></div>
+
+  <div id="aStep2" class="hide">
+    <div class="card">
+      <h2>Fact ledger</h2>
+      <div id="aSummary"></div>
+      <details id="aSourcesBox" open><summary>Sources</summary><div id="aSources" style="margin-top:8px"></div></details>
+      <div id="aLedger" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Step 2 · Decide the angle and length</h2>
+      <div class="banner" id="aRec" style="background:color-mix(in srgb,var(--ok) 10%,transparent);border-color:color-mix(in srgb,var(--ok) 40%,transparent)"></div>
+      <label class="l">Angle (all of them are fact-based)</label>
+      <div class="seg" id="aStanceSeg">
+        <label class="on"><input type="radio" name="astance" value="auto" checked><b>✨ Use the recommendation</b><span id="aStanceAuto">...</span></label>
+        <label><input type="radio" name="astance" value="neutral"><b>⚖️ Neutral</b><span>All documented sides, equal weight</span></label>
+        <label><input type="radio" name="astance" value="critical"><b>🔍 Critical</b><span>Scrutinise gaps, costs, unanswered questions</span></label>
+        <label><input type="radio" name="astance" value="supportive"><b>🤝 Complementary</b><span>Explain strengths and documented results</span></label>
+      </div>
+      <p class="hint" style="margin:8px 0 0">Critical and Complementary videos always include a <b>counterpoint</b> scene. Criticism targets decisions, never character, and nothing is said about anyone's private motives.</p>
+      <label class="l">Length</label>
+      <div class="seg" id="aLenSeg">
+        <label class="on"><input type="radio" name="alen" value="auto" checked><b>✨ Recommended</b><span id="aLenAuto">...</span></label>
+        <label><input type="radio" name="alen" value="6"><b>6 min</b><span>Quick explainer</span></label>
+        <label><input type="radio" name="alen" value="9"><b>9 min</b><span>Standard</span></label>
+        <label><input type="radio" name="alen" value="12"><b>12 min</b><span>Deep dive</span></label>
+        <label><input type="radio" name="alen" value="15"><b>15 min</b><span>Full analysis</span></label>
+      </div>
+      <label class="l">Language</label>
+      <div class="seg" id="aLangSeg">
+        <label class="on"><input type="radio" name="alang" value="hinglish" checked><b>Hinglish</b><span>Hindi + English words, Roman script</span></label>
+        <label><input type="radio" name="alang" value="hindi"><b>Hindi</b><span>Devanagari script</span></label>
+      </div>
+      <label class="l" for="aMusic">Background music</label>
+      <select id="aMusic" style="padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)">
+        <option value="auto">Auto (mood follows the angle)</option><option value="calm">Calm</option><option value="tension">Tension</option>
+        <option value="warm">Warm</option><option value="off">No music</option></select>
+      <span class="hint">Royalty-free music is generated for you. Put your own tracks in <code>assets/music</code> to use them instead.</span>
+    </div>
+
+    <div class="card">
+      <h2>Step 3 · Photos (optional)</h2>
+      <p class="hint">The AI places photos next to the facts they illustrate. Add your own, or pick from your library.</p>
+      <div class="drop" id="aImgDrop">📷 Drag photos here or click to choose<input type="file" id="aImgInput" accept="image/*" multiple hidden></div>
+      <div class="thumbs" id="aThumbs"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="aPickLib">🖼️ Choose from my library</button></div>
+      <div class="chips" id="aLibChips"></div>
+    </div>
+
+    <div class="row"><button class="btn primary" id="aCreate">🎬 Create analysis video</button></div>
+    <div class="card hide" id="aProg2" style="margin-top:16px"><h2 id="aP2Title">Creating...</h2><p class="hint" id="aP2Step">Starting</p>
+      <div class="bar"><i id="aP2Bar"></i></div><pre class="log" id="aP2Log"></pre><div id="aDone" class="hide" style="margin-top:12px"></div></div>
   </div>
 </section>
 
@@ -216,13 +309,13 @@ async function api(url, opts){const r=await fetch(url,opts);let j={};try{j=await
 
 // ---- tabs
 $$('nav button').forEach(b=>b.onclick=()=>{ $$('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['make','videos','library','settings'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));
+  ['make','analysis','videos','library','settings'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));
   if(b.dataset.tab==='videos') loadVideos(); if(b.dataset.tab==='library') loadLibrary(); if(b.dataset.tab==='settings') loadStatus(); });
 function goTab(t){ $(`nav button[data-tab=${t}]`).click() }
 
 // ---- segmented radios
 function seg(id,cb){ $$('#'+id+' label').forEach(l=>l.onclick=()=>{ $$('#'+id+' label').forEach(x=>x.classList.remove('on')); l.classList.add('on'); l.querySelector('input').checked=true; cb&&cb(l.querySelector('input').value)})}
-seg('fmtSeg'); seg('modeSeg', v=>{ $('#manualBox').classList.toggle('hide',v!=='manual'); $('#autoBox').classList.toggle('hide',v!=='auto') });
+seg('fmtSeg'); seg('langSeg'); seg('modeSeg', v=>{ $('#manualBox').classList.toggle('hide',v!=='manual'); $('#autoBox').classList.toggle('hide',v!=='auto') });
 
 // ---- status / settings
 const KEYS = [
@@ -272,15 +365,16 @@ function renderLibChips(){ $('#libChips').innerHTML=libSel.map((p,i)=>`<span><im
 function closeModal(){ $('#modal').classList.remove('on') }
 $('#modal').onclick=e=>{ if(e.target.id==='modal') closeModal() };
 function photoCard(p,sel){ return `<div class="p ${sel?'sel':''}" data-id="${p.id}"><img loading="lazy" src="${p.thumb}"><div class="tick">✓</div>${p.source==='stock'?'<div class="badge">stock</div>':''}<div class="cap">${esc(p.caption||'(no description yet)')}</div></div>` }
-$('#pickLib').onclick=async()=>{
+function openLibPicker(sel, onDone){
   $('#modalBox').innerHTML=`<div class="row"><b style="font-size:17px">Choose from my library</b><button class="btn" id="mDone" style="margin-left:auto">Done</button></div>
     <div class="row" style="margin-top:10px"><input type="text" id="mSearch" placeholder="Search by caption or tag..." style="flex:1"></div><div class="lib" id="mGrid"></div>`;
-  $('#modal').classList.add('on'); $('#mDone').onclick=()=>{closeModal();renderLibChips()};
-  let timer; const load=async()=>{ const r=await api('/api/library?q='+encodeURIComponent($('#mSearch').value)); 
-    $('#mGrid').innerHTML=r.photos.length?r.photos.map(p=>photoCard(p,libSel.some(x=>x.id===p.id))).join(''):'<div class="hint">Nothing here yet. Photos you add to videos will show up here.</div>';
-    $$('#mGrid .p').forEach(el=>el.onclick=()=>{ const p=r.photos.find(x=>x.id===el.dataset.id); const i=libSel.findIndex(x=>x.id===p.id);
-      if(i>=0){libSel.splice(i,1);el.classList.remove('sel')}else{libSel.push({id:p.id,thumb:p.thumb,caption:p.caption});el.classList.add('sel')} }) };
-  $('#mSearch').oninput=()=>{clearTimeout(timer);timer=setTimeout(load,250)}; load() };
+  $('#modal').classList.add('on'); $('#mDone').onclick=()=>{closeModal();onDone()};
+  let timer; const load=async()=>{ const r=await api('/api/library?q='+encodeURIComponent($('#mSearch').value));
+    $('#mGrid').innerHTML=r.photos.length?r.photos.map(p=>photoCard(p,sel.some(x=>x.id===p.id))).join(''):'<div class="hint">Nothing here yet. Photos you add to videos will show up here.</div>';
+    $$('#mGrid .p').forEach(el=>el.onclick=()=>{ const p=r.photos.find(x=>x.id===el.dataset.id); const i=sel.findIndex(x=>x.id===p.id);
+      if(i>=0){sel.splice(i,1);el.classList.remove('sel')}else{sel.push({id:p.id,thumb:p.thumb,caption:p.caption});el.classList.add('sel')} }) };
+  $('#mSearch').oninput=()=>{clearTimeout(timer);timer=setTimeout(load,250)}; load() }
+$('#pickLib').onclick=()=>openLibPicker(libSel, renderLibChips);
 async function loadLibrary(){
   const r=await api(`/api/library?q=${encodeURIComponent($('#libSearch').value)}&source=${$('#libSource').value}`);
   $('#libCount').textContent=`${r.photos.length} shown · ${r.total} in your library`+(r.untagged?` · ${r.untagged} without a description`:'');
@@ -329,7 +423,7 @@ $('#fetchTopics').onclick=async()=>{ $('#topicMsg').textContent='Looking for new
 // ---- create
 async function startJob(demo){
   const fd=new FormData(); const mode=$('input[name=mode]:checked').value;
-  fd.append('format',$('input[name=fmt]:checked').value);
+  fd.append('format',$('input[name=fmt]:checked').value); fd.append('language',$('input[name=lang]:checked').value);
   if(demo) fd.append('demo','1');
   else if(mode==='auto'){ if(!topicId) return toast('Pick a story first'); fd.append('topic_id',topicId) }
   else { if(!$('#headline').value.trim()) return toast('Write a headline first'); fd.append('headline',$('#headline').value); fd.append('text',$('#text').value) }
@@ -366,7 +460,7 @@ async function loadVideos(){
   videos.forEach(v=>{ const [stT,stC]=ST[v.status]||[v.status,'']; const d=document.createElement('div'); d.className='card';
     const issues=(v.issues||[]).map(i=>`<div class="issue ${i.level==='block'?'block':''}">${i.level==='block'?'🚫':'⚠️'} ${esc(i.msg)}</div>`).join('');
     d.innerHTML=`<div class="vid"><video controls preload="metadata" poster="${v.thumb_url}" src="${v.video_url}" ${v.format==='short'?'style="max-height:420px"':''}></video>
-      <div><div class="row"><b style="font-size:17px">${esc(v.title)}</b></div><div class="row" style="margin:6px 0"><span class="pill ${stC}">${stT}</span><span class="pill">${v.format==='short'?'📱 Short':'🖥️ Long'}</span><span class="pill">${Math.round(v.duration)}s</span></div>
+      <div><div class="row"><b style="font-size:17px">${esc(v.title)}</b></div><div class="row" style="margin:6px 0"><span class="pill ${stC}">${stT}</span><span class="pill">${v.format==='short'?'📱 Short':'🖥️ Long'}</span><span class="pill">${Math.round(v.duration)}s</span>${v.analysis?`<span class="pill">🔎 ${esc(v.analysis.stance)}</span>`:''}${v.language?`<span class="pill">${v.language==='hindi'?'Hindi':'Hinglish'}</span>`:''}</div>
       ${issues}
       <div class="row" style="margin-top:12px">
         ${v.status==='pending'||v.status==='rejected'?`<button class="btn ok" data-a="approve">✅ Approve</button>`:''}
@@ -380,10 +474,12 @@ async function loadVideos(){
         <input type="text" data-custom="${v.id}" style="margin-top:6px" placeholder="...or type your own title" ${v.status==='published'?'disabled':''}>
         <div class="thumbs" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${(v.thumb_variants||[]).map((t,i)=>`<div data-thumb="${i}" style="aspect-ratio:16/9;cursor:pointer;outline:${(v.thumb_choice||0)===i?'3px solid var(--brand)':'1px solid var(--line)'}"><img src="${t.url}?t=${Date.now()}" title="${esc(t.text)}"></div>`).join('')}</div>
         ${v.status==='published'?'':`<div class="row" style="margin-top:8px"><button class="btn" data-a="package">Apply choices</button></div>`}</details>`:''}
+      ${v.analysis?`<details data-led="${v.id}"><summary>🧾 Fact ledger &amp; sources</summary><div class="ledbody hint" style="margin-top:8px">Loading...</div></details>`:''}
       ${v.status==='published'?`<details data-es="${v.id}"><summary>📺 End screen &amp; pinned comment ${v.endscreen_done?'✓':''}</summary><div class="esbody hint" style="margin-top:8px">Loading...</div></details>`:''}
       ${v.playlist_error?`<div class="issue">⚠️ Playlist step: ${esc(v.playlist_error)}</div>`:''}
       ${v.playlists&&v.playlists.length?`<div class="hint" style="margin:6px 0 0">📂 In playlists: ${v.playlists.map(esc).join(' · ')}</div>`:''}
       <details><summary>Show description</summary><pre class="log">${esc(v.description)}</pre></details></div></div>`;
+    const ledEl=d.querySelector('[data-led]'); if(ledEl) ledEl.ontoggle=()=>{ if(ledEl.open && !ledEl.dataset.done){ ledEl.dataset.done=1; loadVideoLedger(v,ledEl) } };
     const esEl=d.querySelector('[data-es]'); if(esEl) esEl.ontoggle=()=>{ if(esEl.open) loadEndscreen(v,esEl) };
     let thumbPick=null; d.querySelectorAll('[data-thumb]').forEach(el=>el.onclick=()=>{thumbPick=+el.dataset.thumb; d.querySelectorAll('[data-thumb]').forEach(x=>x.style.outline=x===el?'3px solid var(--brand)':'1px solid var(--line)')});
     d.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>b.dataset.a==='package'?applyPackage(v,d,thumbPick):videoAction(v,b.dataset.a)); $('#videoList').append(d)});
@@ -424,6 +520,79 @@ async function videoAction(v,a){
   }catch(e){ toast('❌ '+e.message) }
 }
 $('#reload').onclick=loadVideos;
+// ---- deep analysis
+seg('aModeSeg', v=>{ $('#aOwn').classList.toggle('hide',v!=='own'); $('#aNews').classList.toggle('hide',v!=='news') });
+seg('aStanceSeg'); seg('aLenSeg'); seg('aLangSeg');
+const TIER={1:['Official','ok'],2:['Major outlet','warn'],3:['Other','bad']};
+const CST={confirmed:['Confirmed','ok'],quoted:['Quote','ok'],reported:['Reported by 1 outlet','warn'],alleged:['Alleged','warn'],disputed:['Disputed','bad'],unverified:['Unverified - not used','bad']};
+const CST_ORDER=['confirmed','quoted','reported','alleged','disputed','unverified'];
+let aTopicId=null, aResearch=null, aImages=[], aLibSel=[];
+function renderLedger(led, host){
+  const src={}; led.sources.forEach(x=>src[x.id]=x);
+  const srcHtml=led.sources.map(x=>{const [t,c]=TIER[x.tier]||TIER[3]; return `<div class="row" style="margin:4px 0"><span class="pill ${c}">${t}</span><b>${esc(x.outlet)}</b> ${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc((x.title||x.url).slice(0,80))}</a>`:'<span class="hint" style="margin:0">'+esc(x.title)+'</span>'}</div>`}).join('');
+  const groups=CST_ORDER.map(st=>{ const cs=led.claims.filter(c=>c.status===st); if(!cs.length) return '';
+    const [lab,cls]=CST[st];
+    return `<details ${st==='unverified'?'':'open'} style="margin-top:8px"><summary><span class="pill ${cls}">${lab}</span> ${cs.length}</summary>`+cs.map(c=>`<div style="margin:8px 0 8px 4px;padding-left:10px;border-left:3px solid var(--line)">
+      <div><span class="hint" style="margin:0">${c.id}</span> ${esc(c.text)}${c.speaker?` <i>(${esc(c.speaker)})</i>`:''}</div>
+      <div class="hint" style="margin:2px 0">${c.source_ids.map(i=>esc((src[i]||{}).outlet||i)).join(' · ')}${c.date?' · '+esc(c.date):''}${c.note?' · '+esc(c.note):''}</div>
+      <details><summary style="font-size:12px">Exact sentence from the source</summary><div class="hint" style="margin:4px 0">“${esc(c.evidence)}”</div></details></div>`).join('')+'</details>' }).join('');
+  host.innerHTML=srcHtml?`<div class="hint" style="margin:0 0 6px">Sources</div>${srcHtml}<div style="margin-top:10px">${groups}</div>`:groups;
+}
+$('#aFetchTopics').onclick=async()=>{ $('#aTopicMsg').textContent='Looking for news... (up to 30 seconds)'; $('#aTopicList').innerHTML='';
+  try{ const r=await api('/api/topics',{method:'POST'}); $('#aTopicMsg').textContent=r.topics.length?`${r.topics.length} stories found. Pick one`:'No story is reported by enough outlets right now';
+    $('#aTopicList').innerHTML=r.topics.map(t=>`<label class="topic" data-id="${t.id}"><input type="radio" name="atopic"><div><b>${esc(t.title)}</b><div class="hint" style="margin:0">${esc(t.sources.join(', '))}</div></div></label>`).join('');
+    $$('#aTopicList .topic').forEach(l=>l.onclick=()=>{aTopicId=l.dataset.id;$$('#aTopicList .topic').forEach(x=>x.classList.toggle('on',x===l))});
+  }catch(e){ $('#aTopicMsg').textContent='❌ '+e.message } };
+async function pollJob(id, ui, steps, onDone){
+  const j=await api('/api/jobs/'+id); ui.bar.style.width=Math.max(4,j.progress)+'%'; ui.log.textContent=j.logs.join('\n');
+  const last=j.logs.join(' '); const st=steps.find(([k])=>last.includes(k)); if(st) ui.step.textContent=st[1]+` · ${j.seconds}s`;
+  if(j.status==='done'){ onDone(j); return }
+  if(j.status==='error'){ ui.title.textContent='❌ Something went wrong'; ui.step.textContent=j.error; ui.fail&&ui.fail(); return }
+  setTimeout(()=>pollJob(id,ui,steps,onDone),1500) }
+const RES_STEPS=[['deciding angle','🧭 Deciding the angle and length'],['cross-checking','⚖️ Cross-checking claims across sources'],['extracting claims','🔍 Pulling out claims and checking each against its source'],['fetching sources','📥 Reading the sources']];
+const ANA_STEPS=[['rendering','🎞️ Rendering the video (slowest step)'],['choosing','🖼️ The AI is placing photos next to the facts'],['synthesizing','🔊 Recording the voice-over'],['polishing','✨ Polishing title and thumbnail text'],['asking for a fix','🛡️ The fact-checker found problems; the script is being corrected'],['writing the','✍️ Writing the analysis script from the ledger']];
+$('#aResearch').onclick=async()=>{
+  const mode=$('input[name=amode]:checked').value; const body={};
+  if(mode==='own'){ body.headline=$('#aHeadline').value.trim(); body.urls=$('#aUrls').value; body.notes=$('#aNotes').value; if(!body.headline) return toast('Write the topic first') }
+  else { if(!aTopicId) return toast('Pick a story first'); body.topic_id=aTopicId; body.urls=$('#aUrls2').value }
+  $('#aResearch').disabled=true; $('#aProg1').classList.remove('hide'); $('#aStep2').classList.add('hide'); $('#aP1Title').textContent='Researching...'; $('#aP1Bar').style.width='3%'; $('#aP1Log').textContent=''; $('#aP1Step').textContent='Starting';
+  const ui={bar:$('#aP1Bar'),log:$('#aP1Log'),step:$('#aP1Step'),title:$('#aP1Title'),fail:()=>$('#aResearch').disabled=false};
+  try{ const {job}=await api('/api/analysis/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    pollJob(job,ui,RES_STEPS,j=>{ $('#aResearch').disabled=false; $('#aP1Title').textContent='✅ Research done'; $('#aP1Bar').style.width='100%'; showResearch(j.result) }) }
+  catch(e){ $('#aResearch').disabled=false; $('#aP1Title').textContent='❌ Could not start'; $('#aP1Step').textContent=e.message } };
+function showResearch(r){
+  aResearch=r; const c=r.counts||{}; const rec=r.recommend;
+  $('#aSummary').innerHTML=`<b>${r.usable} usable claims</b>: ${c.confirmed||0} confirmed, ${c.quoted||0} quotes, ${c.reported||0} reported by one outlet, ${c.alleged||0} alleged, ${c.disputed||0} disputed`+(c.unverified?` · <span style="color:var(--bad)">${c.unverified} unverified (never used)</span>`:'')
+    +(r.enough?'':`<div class="issue block" style="margin-top:8px">Not enough verified material (need at least 4 claims). Add more sources (official sources and major outlets work best) and run the research again.</div>`);
+  renderLedger(r.ledger, $('#aLedger')); $('#aSources').innerHTML=''; $('#aSourcesBox').classList.add('hide');
+  const names={neutral:'Neutral',critical:'Critical',supportive:'Complementary'};
+  $('#aRec').innerHTML=`<b>Recommended: ${names[rec.stance]}, about ${rec.minutes} minutes.</b><br>${esc(rec.why)} ${esc(rec.minutes_why||'')}`+(rec.key_questions&&rec.key_questions.length?`<br><span class="hint">Questions worth answering: ${rec.key_questions.map(esc).join(' · ')}</span>`:'');
+  $('#aStanceAuto').textContent='Recommended: '+names[rec.stance]; $('#aLenAuto').textContent=`Recommended: ${rec.minutes} min`;
+  $('#aStep2').classList.remove('hide'); $('#aCreate').disabled=!r.enough; $('#aStep2').scrollIntoView({behavior:'smooth'}) }
+function renderAThumbs(){ $('#aThumbs').innerHTML=''; aImages.forEach((f,i)=>{const d=document.createElement('div'); const im=document.createElement('img'); im.src=URL.createObjectURL(f);
+  const b=document.createElement('button'); b.textContent='×'; b.onclick=()=>{aImages.splice(i,1);renderAThumbs()}; d.append(im,b); $('#aThumbs').append(d)}) }
+$('#aImgDrop').onclick=()=>$('#aImgInput').click(); $('#aImgInput').onchange=e=>{aImages.push(...[...e.target.files].filter(f=>f.type.startsWith('image/')));renderAThumbs();e.target.value=''};
+$('#aImgDrop').addEventListener('dragover',e=>e.preventDefault()); $('#aImgDrop').addEventListener('drop',e=>{e.preventDefault();aImages.push(...[...e.dataTransfer.files].filter(f=>f.type.startsWith('image/')));renderAThumbs()});
+function renderALibChips(){ $('#aLibChips').innerHTML=aLibSel.map((p,i)=>`<span><img src="${p.thumb}"><small>${esc((p.caption||'photo').slice(0,24))}</small><button data-i="${i}">×</button></span>`).join('');
+  $$('#aLibChips button').forEach(b=>b.onclick=()=>{aLibSel.splice(+b.dataset.i,1);renderALibChips()}) }
+$('#aPickLib').onclick=()=>openLibPicker(aLibSel, renderALibChips);
+$('#aCreate').onclick=async()=>{
+  if(!aResearch||!aResearch.enough) return toast('Run the research first');
+  const fd=new FormData(); fd.append('research_id',aResearch.research_id); fd.append('stance',$('input[name=astance]:checked').value); fd.append('minutes',$('input[name=alen]:checked').value);
+  fd.append('language',$('input[name=alang]:checked').value); fd.append('music',$('#aMusic').value); aImages.forEach(f=>fd.append('images',f)); fd.append('library_ids',JSON.stringify(aLibSel.map(x=>x.id)));
+  $('#aCreate').disabled=true; $('#aProg2').classList.remove('hide'); $('#aDone').classList.add('hide'); $('#aP2Title').textContent='Creating your analysis video...'; $('#aP2Bar').style.width='3%'; $('#aP2Log').textContent=''; $('#aP2Step').textContent='Uploading...';
+  $('#aProg2').scrollIntoView({behavior:'smooth'});
+  const ui={bar:$('#aP2Bar'),log:$('#aP2Log'),step:$('#aP2Step'),title:$('#aP2Title'),fail:()=>$('#aCreate').disabled=false};
+  try{ const {job}=await api('/api/analysis/create',{method:'POST',body:fd});
+    pollJob(job,ui,ANA_STEPS,j=>{ $('#aCreate').disabled=false; $('#aP2Bar').style.width='100%'; $('#aP2Title').textContent='✅ Video ready!'; $('#aP2Step').textContent='';
+      const blocks=(j.result.issues||[]).filter(i=>i.level==='block');
+      $('#aDone').classList.remove('hide'); $('#aDone').innerHTML=`<b>${esc(j.result.title)}</b>`+(blocks.length?`<div class="issue block">⚠️ The fact-checker still has ${blocks.length} problem(s). The video cannot be approved until they are fixed:<br>${blocks.slice(0,6).map(b=>esc(b.msg)).join('<br>')}</div>`:'<div class="hint">Passed the automatic fact check. Please still watch it once before approving.</div>')+`<div class="row" style="margin-top:10px"><button class="btn primary" id="aSee">▶️ Watch video</button></div>`;
+      $('#aSee').onclick=()=>goTab('videos') }) }
+  catch(e){ $('#aCreate').disabled=false; $('#aP2Title').textContent='❌ Could not start'; $('#aP2Step').textContent=e.message } };
+async function loadVideoLedger(v,el){ const box=el.querySelector('.ledbody');
+  try{ const r=await api(`/api/videos/${v.id}/ledger`); renderLedger(r.ledger, box); const a=r.analysis||{};
+    box.insertAdjacentHTML('afterbegin',`<div class="hint" style="margin:0 0 8px">Angle: <b>${esc(a.stance||'')}</b> · as of ${esc(a.as_of||'')} · every fact in the script is tied to one of these claims.</div>`) }catch(e){ box.textContent=e.message } }
+
 async function loadBreaking(){
   try{ const b=await api('/api/breaking'); $('#brkPill').textContent=b.running?'On':'Off'; $('#brkPill').className='pill '+(b.running?'ok':''); $('#brkBtn').textContent=b.running?'Stop watching':'Start watching';
     const when=b.last_check?`Last check ${Math.max(0,Math.round((Date.now()/1000-b.last_check)/60))} min ago · `:'';

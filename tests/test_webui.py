@@ -23,6 +23,9 @@ def client(tmp_path, monkeypatch):
     data["youtube"]["output_dir"] = str(tmp_path / "out")
     data["audio"]["music_dir"] = str(tmp_path / "nomusic")
     data["formats"]["short"].update(width=360, height=640, fps=12, target_seconds=12, max_scenes=5)
+    data["formats"]["analysis"].update(width=640, height=360, fps=12, max_scenes=40)
+    data["endscreen"] = {"enabled": True, "seconds": 4}
+    data["analysis"]["min_minutes"] = 0.2
     (tmp_path / "config.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     (tmp_path / "assets").symlink_to(ROOT / "assets")
 
@@ -213,3 +216,38 @@ def test_endscreen_helper_endpoints(client):
     store.save_meta("pending1", {"id": "pending1", "status": "pending", "format": "short", "title": "x", "topic": "t",
                                  "video_id": None, "video": "", "thumbnail": "", "issues": [], "description": ""}) if store.run_dir("pending1") else None
     assert c.get("/api/videos/pending1/endscreen").status_code == 400
+
+
+def test_deep_analysis_flow_through_the_api(client, monkeypatch):
+    import test_analysis as TA
+    from newschannel.ledger import Ledger
+    c, tmp = client
+    fc = TA.client_for_research("critical", 0.2)
+    monkeypatch.setattr(webui, "make_client", lambda cfg, required=True: fc)
+    monkeypatch.setattr("newschannel.research.fetch_article", TA.fake_fetch)
+    # input validation
+    assert c.post("/api/analysis/research", json={"headline": " "}).status_code == 400
+    assert c.post("/api/analysis/research", json={"headline": "x"}).status_code == 400          # no sources at all
+    assert c.post("/api/analysis/create", data={"research_id": "nope"}, content_type="multipart/form-data").status_code == 400
+    r = c.post("/api/analysis/research", json={"headline": "MSP hike", "urls": "\n".join(TA.TEXTS)})
+    j = wait(c, r.get_json()["job"])
+    assert j["status"] == "done", j["error"]
+    res = j["result"]
+    assert res["enough"] and res["recommend"]["stance"] == "critical" and res["ledger"]["claims"]
+    again = c.get(f"/api/analysis/research/{res['research_id']}").get_json()
+    assert again["usable"] == res["usable"] and again["recommend"]["minutes"] == 1 or again["usable"] == res["usable"]
+    led = Ledger.load(tmp / "out" / "_research" / res["research_id"] / "ledger.json")
+    scenes = TA.good_scenes(led)
+    fc.answers["submit_analysis"] = {"title": "MSP hike: kya sach hai?", "description": "d", "tags": ["msp"], "scenes": scenes}
+    fc.answers["arrange_photos"] = lambda kw: {"scenes": []}
+    base = {"research_id": res["research_id"], "minutes": str(TA.minutes_for(scenes)), "language": "hinglish", "music": "calm"}
+    assert c.post("/api/analysis/create", data={**base, "stance": "angry"}, content_type="multipart/form-data").status_code == 400
+    assert c.post("/api/analysis/create", data={**base, "minutes": "lots"}, content_type="multipart/form-data").status_code == 400
+    j2 = wait(c, c.post("/api/analysis/create", data={**base, "stance": "auto"}, content_type="multipart/form-data").get_json()["job"])
+    assert j2["status"] == "done", j2["error"]
+    v = c.get("/api/videos").get_json()["videos"][0]
+    assert v["analysis"]["stance"] == "critical" and v["language"] == "hinglish" and v["format"] == "analysis"
+    assert not [i for i in v["issues"] if i["level"] == "block"]
+    led_json = c.get(f"/api/videos/{v['id']}/ledger").get_json()
+    assert led_json["analysis"]["counts"]["confirmed"] >= 2 and led_json["ledger"]["claims"]
+    assert c.get("/api/videos/20200101-nothing-short/ledger").status_code == 404
