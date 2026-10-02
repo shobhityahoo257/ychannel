@@ -13,6 +13,9 @@ From the numbered headlines (Hindi and English, from different outlets) do three
 1. Keep ONLY Indian political / government / election / policy news. Drop sports, crime, entertainment, foreign news.
 2. Group headlines that report the SAME event, even across languages.
 3. Rank groups by public importance and by how many different outlets report them.
+   For each group give importance 1-10 = how big it is as NATIONAL political news right now
+   (10: PM/CM resigns, major election result, national crisis; 7: major policy/decision, big court ruling on politics;
+   5: routine statement or meeting; 1: minor).
 Never merge different events. Do not invent facts. Skip topics listed as already covered."""
 
 SCHEMA = {
@@ -23,6 +26,7 @@ SCHEMA = {
             "title": {"type": "string", "description": "Neutral one-line English title of the event"},
             "ids": {"type": "array", "items": {"type": "integer"}},
             "why": {"type": "string", "description": "Why it matters, one sentence"},
+            "importance": {"type": "integer", "description": "1-10 national political significance"},
         },
         "required": ["title", "ids"]}}},
     "required": ["topics"],
@@ -72,7 +76,11 @@ def curate(client: Any, model: str, stories: list[Story], min_sources: int = 2,
         for t in res["topics"]:
             members = [stories[i] for i in t["ids"] if 0 <= i < len(stories)]
             if members:
-                topics.append(Topic(title=t["title"], stories=members, why=t.get("why", "")))
+                topics.append(Topic(title=t["title"], stories=members, why=t.get("why", ""),
+                                    importance=int(t.get("importance") or 0)))
+    for t in topics:                       # offline fallback: more outlets = more important
+        if not t.importance:
+            t.importance = min(10, 4 + len(t.sources))
     # corroboration: never publish a political claim that only one outlet reports
     ok = [t for t in topics if len(t.sources) >= min_sources]
     return ok[:top]

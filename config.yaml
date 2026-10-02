@@ -58,9 +58,19 @@ clips:                         # original speech/video clips that YOU supply (ne
 limits:
   max_uploads_per_day: 4
 
+breaking:                      # breaking-news alerts: `python -m newschannel breaking`
+  poll_minutes: 5
+  window_hours: 3              # only look at stories published in the last N hours
+  min_sources: 3               # at least this many different outlets must report it
+  min_importance: 7            # the curator's 1-10 national-significance score
+  max_alerts_per_day: 3
+  target_seconds: 40           # breaking Shorts are short and fast
+  active_hours: "06:00-23:30"  # India time; no alerts while you sleep
+
 schedule:                      # used by `python -m newschannel schedule`
   timezone: "Asia/Kolkata"
   produce_at: "05:30"          # make the day's videos, then ask you to approve them (Telegram)
+  breaking: true               # also watch for breaking news while the scheduler runs
   publish_slots: ["07:30", "12:30", "18:30"]   # one approved video goes out at each time
 
 audio:

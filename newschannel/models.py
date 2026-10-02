@@ -22,6 +22,7 @@ class Topic:
     title: str
     stories: list[Story] = field(default_factory=list)
     why: str = ""
+    importance: int = 0       # 1-10 as judged by the curator (used for breaking-news alerts)
 
     @property
     def sources(self) -> list[str]:

@@ -134,6 +134,13 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
     <a href="#" id="demoLink2" class="hint" style="margin:0">Try a demo without any key</a>
   </div>
 
+  <div class="card" id="brkCard" style="margin-top:16px">
+    <div class="row"><b>🚨 Breaking-news watcher</b><span class="pill" id="brkPill">Off</span>
+      <button class="btn" id="brkBtn" style="margin-left:auto">Start watching</button></div>
+    <p class="hint" style="margin:8px 0 0" id="brkHint">Checks the news feeds every few minutes. When a major story is reported by several outlets, it prepares a short video and asks for your approval in <b>My videos</b> (and on Telegram if set up). Nothing is published without your approval. Keep this page's app running.</p>
+    <div id="brkAlerts" class="hint" style="margin:8px 0 0"></div>
+  </div>
+
   <div class="card hide" id="progCard" style="margin-top:16px">
     <h2 id="progTitle">Creating your video...</h2>
     <p class="hint" id="progStep">Starting</p>
@@ -320,6 +327,15 @@ async function videoAction(v,a){
   }catch(e){ toast('❌ '+e.message) }
 }
 $('#reload').onclick=loadVideos;
+async function loadBreaking(){
+  try{ const b=await api('/api/breaking'); $('#brkPill').textContent=b.running?'On':'Off'; $('#brkPill').className='pill '+(b.running?'ok':''); $('#brkBtn').textContent=b.running?'Stop watching':'Start watching';
+    const when=b.last_check?`Last check ${Math.max(0,Math.round((Date.now()/1000-b.last_check)/60))} min ago · `:'';
+    $('#brkAlerts').innerHTML = (b.running?when+`every ${b.settings.poll_minutes} min · needs ${b.settings.min_sources}+ outlets, importance ${b.settings.min_importance}+, max ${b.settings.max_alerts_per_day} alerts/day. `:'')
+      + (b.error?`<span style="color:var(--bad)">⚠ ${esc(b.error)}</span> `:'')
+      + (b.alerts.length?'<br>Recent alerts: '+b.alerts.map(a=>'🚨 '+esc(a.title)).join(' · ')+' → see <b>My videos</b>':'') }catch(e){}
+}
+$('#brkBtn').onclick=async()=>{ try{ const on=$('#brkPill').textContent==='On'; await api('/api/breaking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:on?'stop':'start'})}); toast(on?'Stopped':'Watching for breaking news'); setTimeout(loadBreaking,600) }catch(e){ toast('❌ '+e.message) } };
+loadBreaking(); setInterval(loadBreaking, 20000);
 loadStatus();
 </script>
 </body>

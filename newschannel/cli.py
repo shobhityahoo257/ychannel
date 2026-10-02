@@ -126,6 +126,23 @@ def cmd_insights(cfg: Config, a) -> int:
     return 0
 
 
+def cmd_breaking(cfg: Config, a) -> int:
+    from . import breaking
+    if not a.once:
+        breaking.watch(cfg)
+        return 0
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    w = breaking.BreakingWatcher(cfg, _client(cfg, required=not a.dry_run), store,
+                                 make=(lambda t: {"id": ""}) if a.dry_run else None)
+    if a.dry_run:
+        for t in w.detect():
+            print(f"WOULD ALERT: {t.title}  ({', '.join(t.sources)}; importance {t.importance})")
+        return 0
+    for m in w.run_once():
+        print("->", m["video"])
+    return 0
+
+
 def cmd_schedule(cfg: Config, a) -> int:
     from .scheduler import run_forever
     run_forever(cfg)
@@ -164,11 +181,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("stats")
     ins = sub.add_parser("insights", help="what worked on your channel (add --sync to refresh from YouTube)")
     ins.add_argument("--sync", action="store_true")
+    br = sub.add_parser("breaking", help="watch for breaking political news and prepare a Short for approval")
+    br.add_argument("--once", action="store_true", help="check once and exit (for cron)")
+    br.add_argument("--dry-run", action="store_true", help="with --once: only show what would trigger")
     sub.add_parser("schedule", help="run unattended: produce, collect approvals and publish at set times")
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
     return {"ui": cmd_ui, "doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
-            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule}[a.cmd](cfg, a)
+            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "breaking": cmd_breaking}[a.cmd](cfg, a)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from . import learn
 from . import media, planner, render
 from .config import Config
 from .models import Asset, SceneAudio, Script, Story, Topic, save_json, script_from_dict
-from .monetization import policy_check
+from .monetization import Issue, policy_check
 from .review import Store
 from .scriptwriter import build_description, fix_clip_scenes, write_script
 from .packaging import Packaging, improve
@@ -81,8 +81,11 @@ def synthesize_scenes(tts, script: Script, clips: list, folder: Path) -> list[Sc
 
 def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, store: Store,
             extra_images: list[Path] | None = None, preset: str | None = None,
-            log: Callable[[str], None] = print, clip_folders: list[Path] | None = None) -> dict[str, Any]:
+            log: Callable[[str], None] = print, clip_folders: list[Path] | None = None,
+            breaking: bool = False) -> dict[str, Any]:
     fmt = cfg.fmt(fmt_name)
+    if breaking:                                 # breaking news: shorter, faster, labelled
+        fmt.target_seconds = cfg.get("breaking", {}).get("target_seconds", 40)
     run_id = f"{datetime.now().strftime('%Y%m%d')}-{topic.slug}-{fmt_name}"
     run = store.run_dir(run_id)
     brand = brand_from(cfg)
@@ -102,8 +105,10 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         script = script_from_dict(json.loads(sp.read_text(encoding="utf-8")))
     else:
         log("writing script…")
-        script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips, insights)
+        script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips, insights, urgent=breaking)
         fix_clip_scenes(script, clips)
+        if breaking:
+            script.scenes[0].label = "ब्रेकिंग न्यूज़"
         log("polishing hook, title and thumbnail text…")
         pk = improve(client, model, script, topic, insights)
         save_json(run / "packaging.json", pk)
@@ -191,7 +196,10 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                              cfg["youtube"].get("contains_synthetic_media", True), clips)
     issues = policy_check(script, topic, assets, store.history(), cfg.get("limits", {}).get("max_uploads_per_day", 4),
                           cfg["curation"]["min_sources"], clips, total, cfg.get("clips", {}).get("max_share", 0.4))
-    meta = {"id": run_id, "status": "pending", "format": fmt_name, "title": script.title,
+    if breaking:
+        issues.append(Issue("warn", "BREAKING: details may still be developing. Re-check every fact against the "
+                                    "sources before approving."))
+    meta = {"id": run_id, "status": "pending", "breaking": breaking, "format": fmt_name, "title": script.title,
             "description": desc, "tags": script.tags, "topic": topic.title, "video": str(final),
             "thumbnail": str(thumb), "thumbnails": variants,
             "title_options": [t["text"] for t in pk.titles], "hook": script.scenes[0].narration,

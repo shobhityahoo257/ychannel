@@ -83,7 +83,8 @@ class Telegram:
                         "-c:v", "libx264", "-crf", "30", "-preset", "veryfast", "-c:a", "aac",
                         "-b:a", "64k", str(preview)], check=True)
         issues = "\n".join(f"- [{i['level']}] {i['msg']}" for i in meta.get("issues", [])) or "none"
-        caption = f"{meta['title']}\n\nPolicy checks:\n{issues}"[:1000]
+        prefix = "🚨 BREAKING — approve fast, then double-check the facts\n\n" if meta.get("breaking") else ""
+        caption = f"{prefix}{meta['title']}\n\nPolicy checks:\n{issues}"[:1000]
         kb = {"inline_keyboard": [[{"text": "✅ Approve", "callback_data": f"approve:{meta['id']}"},
                                    {"text": "❌ Reject", "callback_data": f"reject:{meta['id']}"}]]}
         with open(preview, "rb") as f:

@@ -149,6 +149,63 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 os.environ[k] = v
         return jsonify({"ok": True, "saved": sorted(updates)})
 
+    # ----- breaking-news watcher (background thread, started/stopped from the UI)
+    watch = {"thread": None, "stop": threading.Event(), "watcher": None, "error": "", "checks": 0}
+
+    def make_breaking(topic: Topic) -> dict[str, Any]:
+        from .daily import notify
+        with run_lock:                                   # never render two videos at once
+            c = cfg()
+            meta = produce(c, topic, "short", make_client(c), make_tts(c), store(), breaking=True)
+        notify(c, meta)
+        return meta
+
+    def watch_loop() -> None:
+        from .breaking import BreakingWatcher
+        c = cfg()
+        w = BreakingWatcher(c, make_client(c), store(), make=make_breaking, log=lambda m: None)
+        watch["watcher"] = w
+        every = c.get("breaking", {}).get("poll_minutes", 5) * 60
+        while not watch["stop"].is_set():
+            try:
+                w.run_once()
+                watch["error"] = ""
+            except Exception as exc:
+                watch["error"] = f"{type(exc).__name__}: {exc}"
+            watch["checks"] += 1
+            watch["stop"].wait(every)
+
+    @app.get("/api/breaking")
+    def breaking_status():
+        w = watch["watcher"]
+        t = watch["thread"]
+        b = cfg().get("breaking", {})
+        return jsonify({
+            "running": bool(t and t.is_alive()), "checks": watch["checks"], "error": watch["error"],
+            "last_check": w.state.last_check if w else 0,
+            "alerts": [{"title": a["title"], "ts": a["ts"], "run_id": a["run_id"]}
+                       for a in (w.state.alerted[-5:][::-1] if w else [])],
+            "settings": {"poll_minutes": b.get("poll_minutes", 5), "min_sources": b.get("min_sources", 3),
+                         "min_importance": b.get("min_importance", 7),
+                         "max_alerts_per_day": b.get("max_alerts_per_day", 3)}})
+
+    @app.post("/api/breaking")
+    def breaking_control():
+        action = (request.get_json(force=True) or {}).get("action")
+        t = watch["thread"]
+        if action == "start":
+            if not (os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")):
+                return jsonify({"error": "Add an AI key in Settings first."}), 400
+            if not (t and t.is_alive()):
+                watch["stop"] = threading.Event()
+                watch["thread"] = threading.Thread(target=watch_loop, daemon=True)
+                watch["thread"].start()
+        elif action == "stop":
+            watch["stop"].set()
+        else:
+            abort(400)
+        return jsonify({"ok": True})
+
     # ----- news topics
     @app.post("/api/topics")
     def get_topics():

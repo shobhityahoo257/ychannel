@@ -26,7 +26,8 @@ class Scheduler:
     def __init__(self, cfg: Config, now: Callable[[], datetime] | None = None,
                  produce: Callable[[], Any] | None = None,
                  publish: Callable[[dict[str, Any]], str] | None = None,
-                 poll: Callable[[], Any] | None = None, log: Callable[[str], None] = print):
+                 poll: Callable[[], Any] | None = None, log: Callable[[str], None] = print,
+                 breaking: Callable[[], Any] | None = None):
         sc = cfg.get("schedule", {})
         self.tz = ZoneInfo(sc.get("timezone", "Asia/Kolkata"))
         self.produce_at = hhmm(sc.get("produce_at", "05:30"))
@@ -40,6 +41,9 @@ class Scheduler:
         tg = Telegram()
         self.poll = poll or ((lambda: tg.poll_once(self.store)) if tg.enabled else (lambda: 0))
         self.state_file = self.store.root / "scheduler_state.json"
+        self.breaking = breaking
+        self.breaking_every = cfg.get("breaking", {}).get("poll_minutes", 5) * 60
+        self._last_breaking = 0.0
 
     # -- persistent "already ran" marks so a restart never repeats a job
     def _done(self) -> set[str]:
@@ -75,6 +79,13 @@ class Scheduler:
             self.poll()
         except Exception as exc:
             self.log(f"[scheduler] telegram poll failed: {exc}")
+        if self.breaking and time.time() - self._last_breaking >= self.breaking_every:
+            self._last_breaking = time.time()
+            try:
+                if self.breaking():
+                    did.append("breaking")
+            except Exception as exc:
+                self.log(f"[scheduler] breaking check failed: {exc}")
         if self._due(self.produce_at, "produce"):
             did.append("produce")
             self.log("[scheduler] producing today's videos…")
@@ -100,7 +111,13 @@ class Scheduler:
 
 
 def run_forever(cfg: Config, interval: int = 30) -> None:
-    s = Scheduler(cfg)
+    breaking = None
+    if cfg.get("schedule", {}).get("breaking", True):
+        from .breaking import BreakingWatcher
+        from .llm import make_client
+        w = BreakingWatcher(cfg, make_client(cfg), Store(cfg.path(cfg["youtube"]["output_dir"])))
+        breaking = w.run_once
+    s = Scheduler(cfg, breaking=breaking)
     print(f"Scheduler running ({s.tz.key}): produce {s.produce_at:%H:%M}, publish {[f'{x:%H:%M}' for x in s.slots]}. "
           "Ctrl+C to stop. Keep this computer awake.")
     while True:

@@ -61,6 +61,13 @@ and a clip without a credit blocks publishing.
 * **Analytics loop** — `python -m newschannel insights --sync` (or the "Sync from YouTube" button) downloads views and
   retention per video. After 4+ videos with data, the hooks that kept people watching (and the ones that didn't) are fed
   into the next scripts automatically.
+* **Breaking-news alerts** — `python -m newschannel breaking` (or the 🚨 switch on the Create tab in the web app) checks the
+  feeds every 5 minutes. A story triggers only if it is reported by `breaking.min_sources` (3) different outlets, the AI rates
+  its national importance `breaking.min_importance` (7/10) or more, and it contains news you haven't already alerted on. It then
+  makes a short (~40 s) Short with a "ब्रेकिंग न्यूज़" strap and sends it to Telegram / **My videos** for your approval, with a
+  reminder to re-check the facts. Guards: max `breaking.max_alerts_per_day`, active hours only, no AI call when the feeds
+  haven't changed (so it costs almost nothing while idle). `--once --dry-run` shows what would trigger without making anything.
+  The scheduler runs it automatically too (`schedule.breaking`).
 * **Unattended mode** — `python -m newschannel schedule` produces videos at `schedule.produce_at`, collects your
   Approve/Reject taps from Telegram, and publishes one approved video at each `schedule.publish_slots` time
   (max `limits.max_uploads_per_day`). Videos blocked by the policy checks are never auto-published. Keep the computer awake.
@@ -73,6 +80,7 @@ and a clip without a credit blocks publishing.
 | `review list / show ID / approve ID / reject ID` | approval queue (`review listen` handles Telegram buttons) |
 | `publish [--publish-at 2026-10-03T07:30:00Z]` | upload approved videos |
 | `insights [--sync]` | what worked on your channel; lessons feed the next scripts |
+| `breaking [--once] [--dry-run]` | watch for breaking political news and prepare a Short for approval |
 | `schedule` | run unattended: produce, collect approvals, publish at set times |
 | `ui` | the point-and-click web app |
 | `stats` | subscribers, watch hours, Shorts views vs. YouTube Partner Programme thresholds |

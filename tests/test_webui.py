@@ -154,3 +154,20 @@ def test_insights_endpoint_and_sync_requires_youtube(client):
     assert c.get("/api/insights").get_json()["ready"] is False
     r = c.post("/api/insights/sync")
     assert r.status_code == 400 and "YouTube" in r.get_json()["error"]
+
+
+def test_breaking_watcher_endpoints(client, monkeypatch):
+    c, _ = client
+    for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    s = c.get("/api/breaking").get_json()
+    assert s["running"] is False and s["settings"]["min_sources"] == 3
+    assert c.post("/api/breaking", json={"action": "start"}).status_code == 400      # needs a key first
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
+    monkeypatch.setattr("newschannel.breaking.BreakingWatcher.run_once", lambda self: [])
+    assert c.post("/api/breaking", json={"action": "start"}).status_code == 200
+    import time
+    time.sleep(0.5)
+    assert c.get("/api/breaking").get_json()["running"] is True
+    assert c.post("/api/breaking", json={"action": "stop"}).status_code == 200
+    assert c.post("/api/breaking", json={"action": "bogus"}).status_code == 400
