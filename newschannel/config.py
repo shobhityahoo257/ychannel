@@ -59,6 +59,11 @@ class Config:
         p = Path(rel)
         return p if p.is_absolute() else self.root / p
 
+    @property
+    def lang(self) -> str:
+        from .i18n import norm
+        return norm(self.data.get("content", {}).get("language", "hinglish"))
+
     # -- provider selection: "auto" picks whichever API key is present
     def llm_provider(self) -> str:
         p = self["llm"].get("provider", "auto")

@@ -33,6 +33,23 @@ SCRIPT = {
 }
 
 
+SCRIPT_HINGLISH = {
+    "title": "Demo: Tool kaise kaam karta hai",
+    "description": "Yeh ek demo video hai.",
+    "tags": ["demo"],
+    "scenes": [
+        {"narration": "Yeh ek demo video hai jo dikhata hai ki hamara news channel tool kaise kaam karta hai",
+         "headline": "Demo: Tool kaise kaam karta hai", "visual_query": "parliament", "kind": "news"},
+        {"narration": "Asli video mein script AI likhta hai aur awaaz bhi AI se aati hai",
+         "headline": "Script aur awaaz automatic", "visual_query": "newsroom", "kind": "news"},
+        {"narration": "Aapki di hui photos AI chunta hai aur sahi order mein laga deta hai",
+         "headline": "Aapki photos, AI ka selection", "visual_query": "photos", "kind": "analysis"},
+        {"narration": "Ab apni keys daaliye aur pehla asli video banaiye", "headline": "Agla step: API keys",
+         "visual_query": "start", "kind": "outro"},
+    ],
+}
+
+
 def _photo(path: Path, w: int, h: int, seed: int) -> None:
     rng = np.random.default_rng(seed)
     a, b = rng.integers(30, 220, 3), rng.integers(30, 220, 3)
@@ -45,13 +62,14 @@ def _photo(path: Path, w: int, h: int, seed: int) -> None:
 
 
 class _Canned:
-    def __init__(self):
+    def __init__(self, lang: str = "hindi"):
         self.messages = self
+        self.script = SCRIPT_HINGLISH if lang == "hinglish" else SCRIPT
 
     def create(self, **kw):
         name = kw["tool_choice"]["name"]
         if name == "submit_script":
-            data = SCRIPT
+            data = self.script
         else:   # arrange_photos: one photo per scene, in order
             ids = [ln.split("asset_id=")[1].split()[0] for blk in kw["messages"][0]["content"]
                    if blk["type"] == "text" for ln in blk["text"].split("\n") if ln.startswith("asset_id=")]
@@ -68,5 +86,5 @@ def run(cfg: Config, fmt: str = "short", out_dir: Path | None = None) -> str:
     cfg.data["images"].update(inbox_dir=str(inbox), use_stock_fallback=False)
     cfg.data["tts"]["provider"] = "mock"
     store = Store(out_dir or work / "out")
-    meta = produce(cfg, manual_topic("डेमो", "डेमो"), fmt, _Canned(), MockTTS(), store, preset="veryfast")
+    meta = produce(cfg, manual_topic("Demo", "Demo"), fmt, _Canned(cfg.lang), MockTTS(), store, preset="veryfast")
     return meta["video"]

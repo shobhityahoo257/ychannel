@@ -81,6 +81,7 @@ class Timeline:
     straps: list[Strap] = field(default_factory=list)
     words: list[CapWord] = field(default_factory=list)
     ticker: str = ""
+    labels: dict[str, str] = field(default_factory=dict)     # ticker_label etc. (language-specific)
     subs: list[TextSpan] = field(default_factory=list)       # subtitles for original clips
     credits: list[TextSpan] = field(default_factory=list)    # "स्रोत: ..." while a clip plays
     main_start: float = 0.0
@@ -297,7 +298,7 @@ def make_ticker_strip(tl: Timeline, h: int) -> tuple[Image.Image, int, int]:
             x += int(f.getlength(t)) + gap // 2
             d.polygon([(x, h / 2 - r), (x + r, h / 2), (x, h / 2 + r), (x - r, h / 2)], fill=b.accent)
             x += gap // 2
-    label_w = int(f.getlength("सुर्खियाँ")) + int(h * 0.8)
+    label_w = int(f.getlength(tl.labels.get("ticker", "Headlines"))) + int(h * 0.8)
     return strip, unit, label_w
 
 
@@ -455,7 +456,7 @@ class Composer:
         b, h = self.tl.brand, self.tick_h
         _, _, lw = self.ticker
         im = Image.new("RGB", (lw, h), b.accent)
-        put(ImageDraw.Draw(im), (lw / 2, h / 2), "सुर्खियाँ", font=font(b.font_bold, int(h * 0.56)),
+        put(ImageDraw.Draw(im), (lw / 2, h / 2), self.tl.labels.get("ticker", "Headlines"), font=font(b.font_bold, int(h * 0.56)),
                                 fill=(255, 255, 255), anchor="mm")
         return im
 
@@ -621,7 +622,8 @@ def make_card(path: Path, W: int, H: int, brand: Brand, title: str, subtitle: st
     return path
 
 
-def make_end_card(path: Path, W: int, H: int, brand: Brand) -> Path:
+def make_end_card(path: Path, W: int, H: int, brand: Brand, title_text: str = "Agla video zaroor dekhein",
+                  sub_text: str = "Subscribe karein") -> Path:
     """End-screen background: two empty video boxes and a circle for Subscribe, matching where YouTube
     places end-screen elements, so you can drop them on in Studio without covering anything."""
     arr = np.zeros((H, W, 3), np.uint8)
@@ -631,7 +633,7 @@ def make_end_card(path: Path, W: int, H: int, brand: Brand) -> Path:
     im = Image.fromarray(arr)
     d = ImageDraw.Draw(im)
     title = font(brand.font_bold, int(H * 0.075))
-    put(d, (W / 2, H * 0.10), "अगला वीडियो ज़रूर देखिए", font=title, fill=(255, 255, 255), anchor="mm")
+    put(d, (W / 2, H * 0.10), title_text, font=title, fill=(255, 255, 255), anchor="mm")
     bw, bh = int(W * 0.36), int(W * 0.36 * 9 / 16)
     top = int(H * 0.22)
     for x in (int(W * 0.10), int(W * 0.54)):
@@ -641,6 +643,6 @@ def make_end_card(path: Path, W: int, H: int, brand: Brand) -> Path:
     cx, cy = W // 2, int(H * 0.80)
     d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=brand.accent, width=5)
     sub = font(brand.font_regular, int(H * 0.04))
-    put(d, (cx, cy + r + int(H * 0.04)), f"सब्सक्राइब करें · {brand.handle}", font=sub, fill=(220, 220, 230), anchor="mm")
+    put(d, (cx, cy + r + int(H * 0.04)), f"{sub_text} · {brand.handle}", font=sub, fill=(220, 220, 230), anchor="mm")
     im.save(path, quality=95)
     return path

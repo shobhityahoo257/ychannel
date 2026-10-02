@@ -7,6 +7,7 @@ from typing import Any, Callable
 from . import curate as C
 from . import sources
 from .config import Config
+from .i18n import t
 from .llm import make_client
 from .pipeline import produce
 from .review import Store, Telegram
@@ -64,7 +65,7 @@ def publish_one(cfg: Config, store: Store, meta: dict[str, Any], publish_at: str
             names = P.target_playlists(meta, pl)
             pids = [pls.ensure(n, privacy=pl.get("privacy", "public")) for n in names]
             rel = P.related(history, meta.get("category", ""), n=pl.get("watch_next_links", 3))
-            extra = P.watch_next_block(rel, [P.playlist_url(p) for p in pids[:1]])
+            extra = P.watch_next_block(rel, [P.playlist_url(p) for p in pids[:1]], cfg.lang)
             if extra:
                 send["description"] = (meta["description"] + "\n\n" + extra)[:4900]
         except Exception as exc:
@@ -83,7 +84,7 @@ def publish_one(cfg: Config, store: Store, meta: dict[str, Any], publish_at: str
             prev = [h for h in P.related(history, meta["category"], n=5) if h.get("category") == meta["category"]][:1]
             for h in prev:
                 try:
-                    pls.append_description(h["video_id"], f"▶ Next / अगला: {meta['title']} {P.watch_url(vid)}")
+                    pls.append_description(h["video_id"], f"▶ {t(cfg.lang, 'd_next')} {meta['title']} {P.watch_url(vid)}")
                 except Exception as exc:
                     problems.append(f"could not link previous video: {exc}")
     store.set_status(meta["id"], "published", video_id=vid, playlists=names, playlist_error="; ".join(problems))

@@ -9,19 +9,20 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from .i18n import LANG_RULES, norm
 from .llm import call_tool
 from .models import Script, Topic
 
-SYSTEM = """You are a YouTube growth editor for a Hindi political-news channel. Using ONLY the facts
+SYSTEM = """You are a YouTube growth editor for an Indian political-news channel. Using ONLY the facts
 in the story text given (never invent facts, numbers, names or quotes), produce:
-1. hooks: 5 alternative spoken openings (Hindi, Devanagari) for the first scene. Each is 8-22 words, makes the
+1. hooks: 5 alternative spoken openings for the first scene (in the OUTPUT LANGUAGE below). Each is 8-22 words, makes the
    viewer need the next sentence within 3 seconds (stakes, tension, a surprising fact FROM THE SOURCES, or a question),
-   in plain spoken Hindi, no shouting. It must still state what the story is about.
-2. titles: 5 YouTube titles in Hindi, max 70 characters, specific and curiosity-driven, each a different angle
+   in plain spoken language, no shouting. It must still state what the story is about.
+2. titles: 5 YouTube titles (OUTPUT LANGUAGE), max 70 characters, specific and curiosity-driven, each a different angle
    (stakes / question / number-from-sources / consequence / contrast). No lies, no clickbait promises the video
    does not keep, no ALL-CAPS, no abusive or communal language.
 3. category: the ONE best-fitting category from the allowed list (if a list is given), else empty.
-4. thumb_texts: 3 thumbnail texts in Hindi, 2-5 words each, punchy, readable at small size.
+4. thumb_texts: 3 thumbnail texts (OUTPUT LANGUAGE), 2-5 words each, punchy, readable at small size.
 Score every hook and title 1-10 on: grabs attention, honest to the sources, clear. Be strict: most should score 4-7."""
 
 SCHEMA = {
@@ -60,7 +61,7 @@ def _safe(candidate: str, allowed_numbers: set[str]) -> bool:
 
 
 def improve(client: Any, model: str, script: Script, topic: Topic, insights: str = "",
-            categories: list[str] | None = None) -> Packaging:
+            categories: list[str] | None = None, lang: str = "hinglish") -> Packaging:
     """Rewrite script.scenes[0].narration and script.title in place with the best safe options."""
     facts = " ".join(f"{s.title}. {s.summary}" for s in topic.stories[:6])
     first = script.scenes[0]
@@ -72,7 +73,7 @@ def improve(client: Any, model: str, script: Script, topic: Topic, insights: str
     if insights:
         prompt += f"\n\nWhat has worked on this channel (use for style only, never for facts):\n{insights}"
     try:
-        res = call_tool(client, model, SYSTEM, prompt, "submit_packaging", SCHEMA, 3000)
+        res = call_tool(client, model, SYSTEM + "\n\n" + LANG_RULES[norm(lang)], prompt, "submit_packaging", SCHEMA, 3000)
     except Exception as exc:                       # packaging is an upgrade, never a blocker
         print(f"[packaging] skipped: {exc}")
         return Packaging()

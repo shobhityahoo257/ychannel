@@ -162,7 +162,7 @@ def cmd_endscreen(cfg: Config, a) -> int:
         print("No published long videos need an end screen.")
     for m in todo:
         h = next((x for x in store.history() if x.get("video_id") == m["video_id"]), {"video_id": m["video_id"]})
-        info = endscreen_helper(h, store.history(), cfg.get("playlists", {}))
+        info = endscreen_helper(h, store.history(), cfg.get("playlists", {}), cfg.lang)
         print(f"\n{m['title']}\n  Studio: {info['studio_url']}")
         for s_ in info["suggestions"]:
             print(f"  suggest: {s_['title']} {s_['url']}")

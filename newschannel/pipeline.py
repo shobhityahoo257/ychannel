@@ -15,6 +15,7 @@ from . import learn
 from .library import Library
 from . import media, planner, render
 from .config import Config
+from .i18n import t as label
 from .models import Asset, SceneAudio, Script, Story, Topic, save_json, script_from_dict
 from .monetization import Issue, policy_check
 from .review import Store
@@ -116,7 +117,11 @@ def synthesize_scenes(tts, script: Script, clips: list, folder: Path) -> list[Sc
 def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, store: Store,
             extra_images: list[Path] | None = None, preset: str | None = None,
             log: Callable[[str], None] = print, clip_folders: list[Path] | None = None,
-            breaking: bool = False, library_ids: list[str] | None = None) -> dict[str, Any]:
+            breaking: bool = False, library_ids: list[str] | None = None,
+            language: str | None = None) -> dict[str, Any]:
+    if language:
+        cfg.data.setdefault("content", {})["language"] = language
+    lang = cfg.lang
     fmt = cfg.fmt(fmt_name)
     if breaking:                                 # breaking news: shorter, faster, labelled
         fmt.target_seconds = cfg.get("breaking", {}).get("target_seconds", 40)
@@ -139,12 +144,12 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         script = script_from_dict(json.loads(sp.read_text(encoding="utf-8")))
     else:
         log("writing script…")
-        script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips, insights, urgent=breaking)
-        fix_clip_scenes(script, clips)
+        script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips, insights, urgent=breaking, lang=lang)
+        fix_clip_scenes(script, clips, lang)
         if breaking:
-            script.scenes[0].label = "ब्रेकिंग न्यूज़"
+            script.scenes[0].label = label(lang, "breaking")
         log("polishing hook, title and thumbnail text…")
-        pk = improve(client, model, script, topic, insights, cfg.get("playlists", {}).get("categories", []))
+        pk = improve(client, model, script, topic, insights, cfg.get("playlists", {}).get("categories", []), lang)
         save_json(run / "packaging.json", pk)
         save_json(sp, script)
 
@@ -177,7 +182,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     tshots: list[render.ShotT] = []
     if intro:
         c = render.make_card(run / "intro.jpg", fmt.width, fmt.height, brand, brand.name,
-                             "भारतीय राजनीति, सीधी और साफ़ बात")
+                             label(lang, "intro_tag"))
         tshots.append(render.ShotT(str(c), 0.0, intro, "still", graphic=True))
     for s in shots:
         a = by_id[s.asset_id]
@@ -190,10 +195,11 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     tshots.sort(key=lambda x: x.start)
     if outro:
         if es.get("enabled", True):     # leaves clean boxes where you place YouTube's end-screen elements in Studio
-            c = render.make_end_card(run / "outro.jpg", fmt.width, fmt.height, brand)
+            c = render.make_end_card(run / "outro.jpg", fmt.width, fmt.height, brand, label(lang, "endcard_title"),
+                                     label(lang, "endcard_sub"))
         else:
-            c = render.make_card(run / "outro.jpg", fmt.width, fmt.height, brand, "चैनल को सब्सक्राइब करें",
-                                 f"रोज़ ताज़ा राजनीतिक खबरें · {brand.handle}")
+            c = render.make_card(run / "outro.jpg", fmt.width, fmt.height, brand, label(lang, "outro_title"),
+                                 f"{label(lang, 'outro_sub')} · {brand.handle}")
         tshots.append(render.ShotT(str(c), total - outro, total, "still", graphic=True))
     if tshots:                                   # shots must tile the timeline with no gaps
         tshots[0].start = 0.0
@@ -203,7 +209,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         if sc.kind == "clip":
             c = clips[sc.clip_id]
             subs += [render.TextSpan(starts[i] + x.start, starts[i] + x.end, x.text) for x in c.subs]
-            credits.append(render.TextSpan(starts[i], starts[i] + durs[i], f"स्रोत: {c.credit}"))
+            credits.append(render.TextSpan(starts[i], starts[i] + durs[i], f"{label(lang, 'source')}: {c.credit}"))
         words += [render.CapWord(w.text, starts[i] + A.LEAD_IN + w.start, starts[i] + A.LEAD_IN + w.end)
                   for w in au.words]
         s0 = starts[i] + 0.2
@@ -211,7 +217,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     tl = render.Timeline(
         fmt.width, fmt.height, fmt.fps, total, tshots, brand, straps,
         words if fmt.captions else [], "|".join(s.headline for s in script.scenes) if fmt.ticker else "",
-        subs=subs, credits=credits, main_start=intro, main_end=total - outro, preset=preset or "fast")
+        subs=subs, credits=credits, main_start=intro, main_end=total - outro, preset=preset or "fast",
+        labels={"ticker": label(lang, "ticker")})
 
     # 5. render + sound
     log(f"rendering {total:.0f}s {fmt.width}x{fmt.height}…")
@@ -225,20 +232,20 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     pk = Packaging(**json.loads(pkp.read_text(encoding="utf-8"))) if pkp.exists() else Packaging()
     photo_paths = list(dict.fromkeys(by_id[s.asset_id].path for s in shots if by_id[s.asset_id].kind != "graphic")) \
         or [by_id[shots[0].asset_id].path]
-    variants = make_variants(photo_paths, pk.thumb_texts, brand, run, script.scenes[0].headline)
+    variants = make_variants(photo_paths, pk.thumb_texts, brand, run, script.scenes[0].headline, label(lang, "thumb_tag"))
     thumb = run / "thumbnail.jpg"
     shutil.copyfile(variants[0]["file"], thumb)
 
     # 6. description, policy gate, meta
     credits = sorted({a.credit for a in assets if a.credit})
     desc = build_description(script, topic, cfg["channel"], not long_form, credits,
-                             cfg["youtube"].get("contains_synthetic_media", True), clips)
+                             cfg["youtube"].get("contains_synthetic_media", True), clips, lang)
     issues = policy_check(script, topic, assets, store.history(), cfg.get("limits", {}).get("max_uploads_per_day", 4),
                           cfg["curation"]["min_sources"], clips, total, cfg.get("clips", {}).get("max_share", 0.4))
     if breaking:
         issues.append(Issue("warn", "BREAKING: details may still be developing. Re-check every fact against the "
                                     "sources before approving."))
-    meta = {"id": run_id, "status": "pending", "breaking": breaking, "format": fmt_name, "title": script.title,
+    meta = {"id": run_id, "status": "pending", "breaking": breaking, "language": lang, "format": fmt_name, "title": script.title,
             "description": desc, "tags": script.tags, "topic": topic.title, "video": str(final),
             "thumbnail": str(thumb), "thumbnails": variants, "category": pk.category,
             "title_options": [t["text"] for t in pk.titles], "hook": script.scenes[0].narration,

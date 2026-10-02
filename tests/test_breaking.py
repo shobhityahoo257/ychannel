@@ -105,4 +105,4 @@ def test_breaking_video_is_labelled_short_and_warns(cfg):
     saved = json.loads((Path(meta["video"]).parent / "script.json").read_text(encoding="utf-8"))
     assert saved["scenes"][0]["label"] == "ब्रेकिंग न्यूज़"
     prompt = next(kw for n, kw in client.calls if n == "submit_script")["messages"][0]["content"]
-    assert "ब्रेकिंग न्यूज़ है" in prompt
+    assert "BREAKING" in prompt

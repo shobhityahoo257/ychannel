@@ -470,7 +470,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         if not m.get("video_id"):
             return jsonify({"error": "Publish the video first."}), 400
         h = next((x for x in s.history() if x.get("video_id") == m["video_id"]), {"video_id": m["video_id"]})
-        out = P.endscreen_helper(h, s.history(), cfg().get("playlists", {}))
+        out = P.endscreen_helper(h, s.history(), cfg().get("playlists", {}), cfg().lang)
         out["done"] = bool(m.get("endscreen_done"))
         out["long"] = m.get("format") == "long"
         return jsonify(out)

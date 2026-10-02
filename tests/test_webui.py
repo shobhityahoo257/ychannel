@@ -17,6 +17,7 @@ from newschannel.tts import MockTTS
 def client(tmp_path, monkeypatch):
     data = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
     data["tts"]["provider"] = "mock"
+    data["content"]["language"] = "hindi"
     data["images"].update(inbox_dir=str(tmp_path / "inbox"), use_stock_fallback=False,
                           library_dir=str(tmp_path / "library"))
     data["youtube"]["output_dir"] = str(tmp_path / "out")

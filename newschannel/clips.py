@@ -140,14 +140,14 @@ def group_words(words: list[dict], max_chars: int = 42) -> list[SubLine]:
     return lines
 
 
-TRANSLATE_SYSTEM = """Translate each numbered subtitle line into natural, simple Hindi (Devanagari).
+TRANSLATE_SYSTEM = """Translate each numbered subtitle line into {target}.
 Be strictly faithful: do not add, soften, sharpen or explain anything. Keep names and numbers exact.
 Return exactly one Hindi line per input line, in the same order."""
 TRANSLATE_SCHEMA = {"type": "object", "properties": {"lines": {"type": "array", "items": {"type": "string"}}},
                     "required": ["lines"]}
 
 
-def build_subtitles(clip: Clip, client: Any, model: str, provider: str) -> None:
+def build_subtitles(clip: Clip, client: Any, model: str, provider: str, lang: str = "hinglish") -> None:
     """Fill clip.subs / clip.transcript. Silent no-op in mock mode."""
     if provider == "mock":
         return
@@ -155,7 +155,9 @@ def build_subtitles(clip: Clip, client: Any, model: str, provider: str) -> None:
     clip.language = lang
     subs = group_words(words)
     if subs and not stt.is_hindi(lang) and client is not None:
-        res = call_tool(client, model, TRANSLATE_SYSTEM,
+        target = ("natural spoken Hinglish in Roman script (Hindi grammar with common English words)"
+                  if lang == "hinglish" else "natural, simple Hindi (Devanagari)")
+        res = call_tool(client, model, TRANSLATE_SYSTEM.format(target=target),
                         "\n".join(f"{i}. {s.text}" for i, s in enumerate(subs)), "submit_translation",
                         TRANSLATE_SCHEMA)
         out = res["lines"]
@@ -172,5 +174,5 @@ def load(cfg: Config, folders: list[Path], run: Path, client: Any, fps: int) -> 
     clips = discover(folders, c.get("max_seconds", 30))
     for i, clip in enumerate(clips):
         prepare(clip, run / "clips", i, fps)
-        build_subtitles(clip, client, cfg.models()[0], cfg.tts_provider())
+        build_subtitles(clip, client, cfg.models()[0], cfg.tts_provider(), cfg.lang)
     return clips

@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .i18n import t
+
 
 def watch_url(video_id: str) -> str:
     return f"https://youtu.be/{video_id}"
@@ -39,22 +41,22 @@ def related(history: list[dict[str, Any]], category: str, exclude: str = "", n: 
     return (same + [h for h in pub if h not in same])[:n]
 
 
-def watch_next_block(rel: list[dict[str, Any]], playlist_urls: list[str]) -> str:
+def watch_next_block(rel: list[dict[str, Any]], playlist_urls: list[str], lang: str = "hinglish") -> str:
     lines = []
     if rel:
-        lines.append("▶ Watch next / और देखिए:")
+        lines.append("▶ " + t(lang, "d_watch"))
         lines += [f"• {h['title']}: {watch_url(h['video_id'])}" for h in rel]
     if playlist_urls:
         lines.append("")
-        lines += [f"📂 Full playlist: {u}" for u in playlist_urls]
+        lines += [f"📂 {t(lang, 'd_playlist')} {u}" for u in playlist_urls]
     return "\n".join(lines)
 
 
-def pinned_comment(next_video: dict[str, Any] | None) -> str:
-    text = "आपकी क्या राय है? नीचे कमेंट में बताइए 👇"
+def pinned_comment(next_video: dict[str, Any] | None, lang: str = "hinglish") -> str:
+    text = t(lang, "comment_q") + " 👇"
     if next_video:
-        text += f"\n\n▶ अगला वीडियो: {watch_url(next_video['video_id'])}"
-    return text + "\n\nऐसी खबरों के लिए चैनल को सब्सक्राइब करना न भूलें।"
+        text += f"\n\n▶ {t(lang, 'comment_next')} {watch_url(next_video['video_id'])}"
+    return text + "\n\n" + t(lang, "comment_sub")
 
 
 class Playlists:
@@ -115,14 +117,15 @@ class Playlists:
         return True
 
 
-def endscreen_helper(video: dict[str, Any], history: list[dict[str, Any]], cfg_pl: dict) -> dict[str, Any]:
+def endscreen_helper(video: dict[str, Any], history: list[dict[str, Any]], cfg_pl: dict,
+                     lang: str = "hinglish") -> dict[str, Any]:
     """What to click in YouTube Studio (the API cannot do it) for this published video."""
     vid = video["video_id"]
     rel = related(history, video.get("category", ""), exclude=vid, n=3)
     return {
         "studio_url": f"https://studio.youtube.com/video/{vid}/editor",
         "suggestions": [{"title": h["title"], "id": h["video_id"], "url": watch_url(h["video_id"])} for h in rel],
-        "pinned_comment": pinned_comment(rel[0] if rel else None),
+        "pinned_comment": pinned_comment(rel[0] if rel else None, lang),
         "steps": [
             "Open the Studio link, then click Editor → End screen (the video must be 25+ seconds).",
             "Add a Video element: choose 'Most recent upload' or one of the suggestions below.",

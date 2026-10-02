@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageEnhance
 from .render import Brand, font, put, wrap
 
 
-def make_thumbnail(photo: str, headline: str, brand: Brand, out: Path) -> Path:
+def make_thumbnail(photo: str, headline: str, brand: Brand, out: Path, tag_text: str = "TAAZA KHABAR") -> Path:
     W, H = 1280, 720
     im = Image.open(photo).convert("RGB")
     s = max(W / im.width, H / im.height)
@@ -28,19 +28,20 @@ def make_thumbnail(photo: str, headline: str, brand: Brand, out: Path) -> Path:
         put(d, (50, y), line, font=f, fill=(255, 255, 255), stroke_width=7, stroke_fill=(0, 0, 0))
         y += 128
     tag = font(brand.font_bold, 46)
-    tw = int(tag.getlength("ताज़ा खबर")) + 50
+    tw = int(tag.getlength(tag_text)) + 50
     d.rectangle((0, 40, tw, 110), fill=brand.accent)
-    put(d, (25, 75), "ताज़ा खबर", font=tag, fill=(255, 255, 255), anchor="lm")
+    put(d, (25, 75), tag_text, font=tag, fill=(255, 255, 255), anchor="lm")
     im.convert("RGB").save(out, quality=90)
     return out
 
 
-def make_variants(photos: list[str], texts: list[str], brand: Brand, folder: Path, default_text: str) -> list[dict]:
+def make_variants(photos: list[str], texts: list[str], brand: Brand, folder: Path, default_text: str,
+                  tag_text: str = "TAAZA KHABAR") -> list[dict]:
     """Up to 3 thumbnails, each with a different photo and text, so you can pick (or A/B test)."""
     texts = texts or [default_text]
     out = []
     for i, text in enumerate(texts[:3]):
         photo = photos[i % len(photos)]
-        path = make_thumbnail(photo, text, brand, folder / f"thumbnail_{i + 1}.jpg")
+        path = make_thumbnail(photo, text, brand, folder / f"thumbnail_{i + 1}.jpg", tag_text)
         out.append({"file": str(path), "text": text})
     return out

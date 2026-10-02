@@ -48,6 +48,7 @@ def make_photo(path, w, h, seed):
 def cfg(tmp_path):
     c = Config.load()
     c.data["tts"]["provider"] = "mock"
+    c.data.setdefault("content", {})["language"] = "hindi"      # legacy tests assert Hindi (Devanagari) output
     c.data["images"]["inbox_dir"] = str(tmp_path / "inbox")
     c.data["images"]["use_stock_fallback"] = False
     c.data["images"]["library_dir"] = str(tmp_path / "library")

@@ -3,34 +3,40 @@ from __future__ import annotations
 from typing import Any
 
 from .config import Format
+from .i18n import LANG_RULES, norm, t
 from .llm import call_tool
 from .models import Scene, Script, Topic
 
-WORDS_PER_SEC = 2.4  # natural Hindi TTS pace
+WORDS_PER_SEC = 2.4  # natural Hindi/Hinglish TTS pace
 
-SYSTEM = """तुम एक अनुभवी हिंदी न्यूज़ एंकर और स्क्रिप्ट-राइटर हो। तुम्हारा चैनल भारतीय राजनीति पर है।
 
-नियम (सख़्ती से मानो):
-1. सिर्फ़ दिए गए स्रोतों में मौजूद तथ्य इस्तेमाल करो। कोई आँकड़ा, उद्धरण, तारीख़ या नाम अपनी तरफ़ से मत जोड़ो।
-2. निष्पक्ष रहो: किसी पार्टी/नेता के बारे में निजी राय, गाली, आरोप या अपमानजनक भाषा नहीं। आरोप हो तो "…ने आरोप लगाया" और दोनों पक्ष बताओ।
-3. हर अहम दावे के साथ स्रोत का ज़िक्र करो ("बीबीसी हिंदी के मुताबिक़…").
-4. भाषा: सरल, बोलचाल की शुद्ध हिंदी, छोटे वाक्य, टीवी एंकर का लहजा। बोली जाने वाली लाइन में अंक शब्दों में लिखो (जैसे "तीन सौ", "पंद्रह प्रतिशत") ताकि उच्चारण सही रहे।
-5. पहला दृश्य एक मज़बूत hook हो (पहले 3 सेकंड में बताओ क्या हुआ और क्यों मायने रखता है)।
-6. एक दृश्य "विश्लेषण" (kind=analysis) ज़रूर रखो: संदर्भ, पृष्ठभूमि, और "इसका असर क्या हो सकता है" — यह चैनल का मौलिक योगदान है। विश्लेषण भी तथ्यों पर टिका हो, भविष्यवाणी नहीं।
-7. आख़िरी दृश्य: एक पंक्ति का सार + दर्शकों से सवाल/सब्सक्राइब का निमंत्रण।
-8. visual_query: अंग्रेज़ी में 2-4 शब्द का सामान्य फ़ोटो-सर्च (जैसे "Indian parliament building", "voters queue India"), कभी किसी व्यक्ति का नाम नहीं।
-9. headline: स्क्रीन पर दिखने वाली छोटी हिंदी हेडलाइन (50 अक्षर तक)।
-10. अगर वीडियो-क्लिप (भाषण/बयान) दिए गए हैं: हर क्लिप के लिए ठीक एक दृश्य kind="clip" बनाओ (clip_id के साथ, narration ख़ाली "")।
-    क्लिप से ठीक पहले वाला दृश्य उसका परिचय दे (कौन, कहाँ, किस संदर्भ में), और क्लिप के बाद वाला दृश्य उसका सार/संदर्भ/विश्लेषण दे।
-    क्लिप में जो बोला गया है उसे सिर्फ़ दिए गए transcript के आधार पर बताओ; अपनी तरफ़ से कोई बात उनके मुँह में मत डालो और संदर्भ से काटकर अर्थ मत बदलो।
-    क्लिप का दृश्य पहला दृश्य न हो (पहले hook बोलो)।
-11. title: YouTube शीर्षक, हिंदी, 70 अक्षर तक, सनसनीखेज़ झूठ/क्लिकबेट नहीं, पर जिज्ञासा जगाने वाला।"""
+def system_prompt(lang: str) -> str:
+    return f"""You are an experienced Indian news anchor and script-writer for a YouTube channel on Indian politics.
+
+{LANG_RULES[norm(lang)]}
+
+Rules (follow strictly):
+1. Use ONLY facts present in the given sources. Never add a number, quote, date or name of your own.
+2. Be fair: no personal opinions, abuse or insulting language about any party or leader. If something is an allegation, say "X alleged ..." and
+   give the other side where the sources do.
+3. Attribute every important claim to its source ("according to BBC Hindi ...").
+4. Language: short sentences, spoken style, natural for a voice-over.
+5. Scene 1 is a strong hook: within 3 seconds say what happened and why it matters.
+6. Include one scene with kind=analysis: context, background, and "what could this mean" - grounded in the facts, not predictions.
+7. Last scene: a one-line summary plus a question for viewers / invitation to subscribe.
+8. visual_query: 2-4 English words for a generic stock photo search (e.g. "Indian parliament building", "voters queue India"); never a person's name.
+9. headline: a short on-screen headline (max ~50 characters).
+10. If video clips (speeches/statements) are provided: make exactly one scene with kind="clip" for each clip (with its clip_id, empty narration).
+    The scene before a clip introduces it (who, where, context); the scene after gives the summary / context / analysis. Describe what is said in a clip
+    ONLY from the given transcript; do not put words in anyone's mouth or cut context to change the meaning. A clip scene is never the first scene.
+11. title: YouTube title, max 70 characters, curiosity-driven but honest - no sensational lies."""
+
 
 SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string"},
-        "description": {"type": "string", "description": "2-3 line Hindi summary for YouTube description"},
+        "description": {"type": "string", "description": "2-3 line summary for the YouTube description"},
         "tags": {"type": "array", "items": {"type": "string"}},
         "scenes": {"type": "array", "items": {
             "type": "object",
@@ -86,31 +92,32 @@ def validate(script: Script, fmt: Format, clips: list | None = None) -> list[str
 def _clip_pack(clips: list) -> str:
     if not clips:
         return ""
-    parts = ["\n\nवीडियो-क्लिप (मूल):"]
+    parts = ["\n\nOriginal video clips:"]
     for i, c in enumerate(clips):
-        parts.append(f"clip_id={i} | स्रोत: {c.credit or 'अज्ञात'} | अवधि: {c.duration:.0f}s | संदर्भ: {c.note}\n"
-                     f"जो बोला गया (transcript): {c.transcript[:1500] or '(उपलब्ध नहीं)'}")
+        parts.append(f"clip_id={i} | source: {c.credit or 'unknown'} | length: {c.duration:.0f}s | context: {c.note}\n"
+                     f"What is said (transcript): {c.transcript[:1500] or '(not available)'}")
     return "\n".join(parts)
 
 
 def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: str,
-                 clips: list | None = None, insights: str = "", urgent: bool = False) -> Script:
+                 clips: list | None = None, insights: str = "", urgent: bool = False,
+                 lang: str = "hinglish") -> Script:
     clips = clips or []
     lo, hi = budget(fmt, sum(c.duration for c in clips))
-    kind = "YouTube Short (vertical, fast, ~%ds)" % fmt.target_seconds if fmt.portrait \
-        else "long-form news video (~%d minutes)" % round(fmt.target_seconds / 60)
-    base = (f"चैनल: {channel}\nफ़ॉर्मैट: {kind}\nकुल बोली जाने वाली लंबाई: {lo}–{hi} शब्द, "
-            f"अधिकतम {fmt.max_scenes} दृश्य।\nविषय: {topic.title}\n\nस्रोत:\n{_source_pack(topic)}{_clip_pack(clips)}"
-            + ("\n\nयह ब्रेकिंग न्यूज़ है: पहली ही पंक्ति में सबसे ताज़ा घटना बताओ, सिर्फ़ पक्के तथ्य, "
-               "'अभी जानकारी आ रही है' जैसी सावधानी के साथ, कोई अटकल नहीं।" if urgent else "")
-            + (f"\n\nइस चैनल के एनालिटिक्स से सीख (सिर्फ़ शैली/hook के लिए, तथ्यों के लिए नहीं):\n{insights}" if insights else ""))
+    kind = f"YouTube Short (vertical, fast, ~{fmt.target_seconds}s)" if fmt.portrait \
+        else f"long-form news video (~{round(fmt.target_seconds / 60)} minutes)"
+    base = (f"Channel: {channel}\nFormat: {kind}\nTotal spoken length: {lo}-{hi} words, at most {fmt.max_scenes} scenes.\n"
+            f"Topic: {topic.title}\n\nSources:\n{_source_pack(topic)}{_clip_pack(clips)}"
+            + ("\n\nThis is BREAKING news: say the latest event in the very first line, only firm facts, with caution "
+               "like 'details are still coming in', and no speculation." if urgent else "")
+            + (f"\n\nLessons from this channel's analytics (for style/hook only, never for facts):\n{insights}" if insights else ""))
     feedback = ""
     script = None
     for _ in range(2):
-        res = call_tool(client, model, SYSTEM, base + feedback, "submit_script", SCHEMA, 6000)
+        res = call_tool(client, model, system_prompt(lang), base + feedback, "submit_script", SCHEMA, 6000)
         script = Script(
             title=res["title"].strip(), description=res["description"].strip(),
-            tags=[t.strip() for t in res.get("tags", [])][:12],
+            tags=[x.strip() for x in res.get("tags", [])][:12],
             scenes=[Scene(narration=s["narration"].strip(), headline=s["headline"].strip(),
                           visual_query=s.get("visual_query", ""), label=s.get("label", ""),
                           kind=s.get("kind", "news"),
@@ -121,38 +128,38 @@ def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: st
         problems = validate(script, fmt, clips)
         if not problems:
             break
-        feedback = "\n\nपिछली स्क्रिप्ट में ये समस्याएँ थीं, ठीक करो:\n- " + "\n- ".join(problems)
+        feedback = "\n\nThe previous script had these problems, fix them:\n- " + "\n- ".join(problems)
     assert script is not None
     for s in script.scenes:
-        s.label = s.label or {"analysis": "विश्लेषण", "clip": "मूल वीडियो"}.get(s.kind, "ताज़ा खबर")
+        s.label = s.label or {"analysis": t(lang, "analysis"), "clip": t(lang, "clip")}.get(s.kind, t(lang, "news"))
     return script
 
 
 def build_description(script: Script, topic: Topic, cfg_channel: dict, short: bool,
-                      credits: list[str], ai_note: bool = True, clips: list | None = None) -> str:
+                      credits: list[str], ai_note: bool = True, clips: list | None = None,
+                      lang: str = "hinglish") -> str:
     lines = [script.description, ""]
-    lines.append("स्रोत / Sources:")
+    lines.append(t(lang, "d_sources"))
     seen = set()
     for st in topic.stories[:6]:
         if st.link not in seen:
             seen.add(st.link)
             lines.append(f"• {st.source}: {st.link}")
     if clips:
-        lines += ["", "वीडियो अंश / Video excerpts:"] + [f"• {c.credit}: {c.note}" for c in clips]
+        lines += ["", t(lang, "d_clips")] + [f"• {c.credit}: {c.note}" for c in clips]
     if credits:
-        lines += ["", "तस्वीरें / Image credits:"] + [f"• {c}" for c in credits]
+        lines += ["", t(lang, "d_credits")] + [f"• {c}" for c in credits]
     if ai_note:
-        lines += ["", "ℹ️ इस वीडियो की स्क्रिप्ट और आवाज़ AI की मदद से तैयार की गई है और प्रकाशन से पहले संपादकीय जाँच से गुज़री है। "
-                      "यह सामग्री सूचना और विश्लेषण के उद्देश्य से है; किसी पार्टी या व्यक्ति का समर्थन/विरोध नहीं।"]
+        lines += ["", t(lang, "d_ai")]
     lines += ["", f"{cfg_channel['name']} {cfg_channel.get('handle', '')}".strip()]
-    tags = ["#" + t.replace(" ", "") for t in script.tags[:4]]
+    tags = ["#" + x.replace(" ", "") for x in script.tags[:4]]
     if short:
         tags.insert(0, "#Shorts")
     lines.append(" ".join(tags))
     return "\n".join(lines)[:4900]
 
 
-def fix_clip_scenes(script: Script, clips: list) -> None:
+def fix_clip_scenes(script: Script, clips: list, lang: str = "hinglish") -> None:
     """Guarantee every clip plays exactly once and never as the very first scene,
     even if the model got it wrong after retries."""
     seen: set[int] = set()
@@ -168,7 +175,7 @@ def fix_clip_scenes(script: Script, clips: list) -> None:
     for i, c in enumerate(clips):
         if i not in seen:
             pos = min(len(script.scenes), 2 + len(seen))
-            script.scenes.insert(pos, Scene("", (c.note or "मूल वीडियो")[:50], "", "मूल वीडियो", "clip", i))
+            script.scenes.insert(pos, Scene("", (c.note or t(lang, "clip"))[:50], "", t(lang, "clip"), "clip", i))
             seen.add(i)
     if script.scenes and script.scenes[0].kind == "clip":
         script.scenes.insert(1 if len(script.scenes) > 1 else 0, script.scenes.pop(0))

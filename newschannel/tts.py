@@ -9,14 +9,11 @@ import requests
 
 from . import stt
 from .config import Config
+from .i18n import TTS_REPLACE, norm
 from .models import SceneAudio, Word
 
-_REPL = [("%", " प्रतिशत"), ("₹", " रुपये "), ("&", " और "), ("PM", "पीएम"), ("CM", "सीएम"),
-         ("BJP", "बीजेपी"), ("NDA", "एनडीए"), ("ECI", "चुनाव आयोग")]
-
-
-def normalize(text: str) -> str:
-    for a, b in _REPL:
+def normalize(text: str, lang: str = "hinglish") -> str:
+    for a, b in TTS_REPLACE[norm(lang)]:
         text = text.replace(a, b)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -59,10 +56,11 @@ class ElevenLabsTTS:
                          "style": t.get("style", 0.0), "speed": t.get("speed", 1.0),
                          "use_speaker_boost": True}
         self.model = t["model_id"]
+        self.lang, self.language_code = cfg.lang, t.get("language_code", "hi")
 
     def synthesize(self, text: str, out: Path, prev: str = "", nxt: str = "") -> SceneAudio:
-        body = {"text": normalize(text), "model_id": self.model, "voice_settings": self.settings,
-                "language_code": "hi"}
+        body = {"text": normalize(text, self.lang), "model_id": self.model, "voice_settings": self.settings,
+                "language_code": self.language_code}
         if prev:
             body["previous_text"] = prev
         if nxt:
@@ -95,11 +93,13 @@ class OpenAITTS:
         self.key = Config.env("OPENAI_API_KEY", required=True)
         self.model = t.get("openai_model", "gpt-4o-mini-tts")
         self.voice = Config.env("OPENAI_VOICE") or t.get("openai_voice", "onyx")
-        self.instructions = t.get("openai_instructions", "")
+        ins = t.get("openai_instructions", "")
+        self.lang = cfg.lang
+        self.instructions = ins.get(self.lang, "") if isinstance(ins, dict) else ins
         self.speed = t.get("speed", 1.0)
 
     def synthesize(self, text: str, out: Path, prev: str = "", nxt: str = "") -> SceneAudio:
-        body = {"model": self.model, "voice": self.voice, "input": normalize(text),
+        body = {"model": self.model, "voice": self.voice, "input": normalize(text, self.lang),
                 "response_format": "mp3", "speed": self.speed}
         if self.instructions and "tts-1" not in self.model:     # `instructions` is unsupported by tts-1
             body["instructions"] = self.instructions

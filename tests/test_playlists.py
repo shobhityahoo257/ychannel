@@ -104,19 +104,19 @@ def test_publish_one_files_video_and_links_previous(cfg, tmp_path, monkeypatch):
     monkeypatch.setattr("newschannel.youtube.upload", lambda video, thumb, meta, ytcfg, short, at=None:
                         uploaded.update(meta=meta, short=short) or "NEWVID")
     store = Store(Path(cfg["youtube"]["output_dir"]))
-    store.add_history("Earlier", "t", "PREV", category="चुनाव", format="short")
+    store.add_history("Earlier", "t", "PREV", category="Chunav", format="short")
     d = store.run_dir("r1")
-    meta = {"id": "r1", "status": "approved", "format": "short", "title": "New one", "topic": "x", "category": "चुनाव",
+    meta = {"id": "r1", "status": "approved", "format": "short", "title": "New one", "topic": "x", "category": "Chunav",
             "video": str(d / "v.mp4"), "thumbnail": str(d / "t.jpg"), "description": "base", "issues": [], "video_id": None}
     store.save_meta("r1", meta)
     assert daily.publish_one(cfg, store, meta) == "NEWVID"
     assert "Watch next" in uploaded["meta"]["description"] and "youtu.be/PREV" in uploaded["meta"]["description"]
     assert "playlist?list=" in uploaded["meta"]["description"]
-    assert {t for t, _ in yt.items} == set(yt.playlists_db[n] for n in ("चुनाव", cfg["playlists"]["format_playlists"]["short"]))
+    assert {t for t, _ in yt.items} == set(yt.playlists_db[n] for n in ("Chunav", cfg["playlists"]["format_playlists"]["short"]))
     assert "youtu.be/NEWVID" in yt.videos_db["PREV"]["description"]            # older video now points forward
     saved = store.meta("r1")
-    assert saved["status"] == "published" and saved["playlists"][0] == "चुनाव" and saved["playlist_error"] == ""
-    assert store.history()[-1]["category"] == "चुनाव"
+    assert saved["status"] == "published" and saved["playlists"][0] == "Chunav" and saved["playlist_error"] == ""
+    assert store.history()[-1]["category"] == "Chunav"
 
 
 def test_playlist_failures_never_undo_the_upload(cfg, tmp_path, monkeypatch):
