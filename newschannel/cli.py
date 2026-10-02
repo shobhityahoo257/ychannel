@@ -143,6 +143,33 @@ def cmd_breaking(cfg: Config, a) -> int:
     return 0
 
 
+def cmd_playlists(cfg: Config, a) -> int:
+    from .playlists import Playlists, playlist_url
+    from .youtube import service
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    pl = cfg.get("playlists", {})
+    pls = Playlists(service(), store.root / "playlists.json")
+    for name in [*pl.get("categories", []), *pl.get("format_playlists", {}).values()]:
+        print(f"{name}: {playlist_url(pls.ensure(name, privacy=pl.get('privacy', 'public')))}")
+    return 0
+
+
+def cmd_endscreen(cfg: Config, a) -> int:
+    from .playlists import endscreen_helper
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    todo = [m for m in store.runs("published") if m.get("format") == "long" and not m.get("endscreen_done")]
+    if not todo:
+        print("No published long videos need an end screen.")
+    for m in todo:
+        h = next((x for x in store.history() if x.get("video_id") == m["video_id"]), {"video_id": m["video_id"]})
+        info = endscreen_helper(h, store.history(), cfg.get("playlists", {}))
+        print(f"\n{m['title']}\n  Studio: {info['studio_url']}")
+        for s_ in info["suggestions"]:
+            print(f"  suggest: {s_['title']} {s_['url']}")
+        print("  pinned comment:\n    " + info["pinned_comment"].replace("\n", "\n    "))
+    return 0
+
+
 def cmd_schedule(cfg: Config, a) -> int:
     from .scheduler import run_forever
     run_forever(cfg)
@@ -184,11 +211,13 @@ def main(argv: list[str] | None = None) -> int:
     br = sub.add_parser("breaking", help="watch for breaking political news and prepare a Short for approval")
     br.add_argument("--once", action="store_true", help="check once and exit (for cron)")
     br.add_argument("--dry-run", action="store_true", help="with --once: only show what would trigger")
+    sub.add_parser("playlists", help="create your category/format playlists on YouTube")
+    sub.add_parser("endscreen", help="list published long videos that still need an end screen set up in Studio")
     sub.add_parser("schedule", help="run unattended: produce, collect approvals and publish at set times")
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
     return {"ui": cmd_ui, "doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
-            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "breaking": cmd_breaking}[a.cmd](cfg, a)
+            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "breaking": cmd_breaking, "playlists": cmd_playlists, "endscreen": cmd_endscreen}[a.cmd](cfg, a)
 
 
 if __name__ == "__main__":

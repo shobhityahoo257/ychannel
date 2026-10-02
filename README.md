@@ -81,6 +81,16 @@ and a clip without a credit blocks publishing.
   Approve/Reject taps from Telegram, and publishes one approved video at each `schedule.publish_slots` time
   (max `limits.max_uploads_per_day`). Videos blocked by the policy checks are never auto-published. Keep the computer awake.
 
+## Playlists & end screens
+* **Playlists (automatic)** — when you publish, the video is added to a playlist for its topic (`playlists.categories`, chosen by the
+  AI) and one for its format (Shorts / full reports). Missing playlists are created for you (`python -m newschannel playlists`
+  creates them all up front). The description gets "Watch next" links to your latest videos in the same topic plus the playlist link, and
+  the previous video in that topic is updated with a link forward to the new one (`playlists.link_previous`).
+* **End screens (semi-automatic)** — YouTube's API cannot create end screens or cards, so that step stays in Studio. Long videos end with a
+  12-second end card (`endscreen.seconds`) that leaves clean boxes for YouTube's elements. In **My videos**, each published video has an
+  "End screen & pinned comment" helper: Studio link, which videos to link, a pinned-comment draft (also: `python -m newschannel endscreen`).
+* YouTube API quota: the default 10,000 units/day covers about 4-5 uploads a day including these playlist calls. Request more in Google Cloud if needed.
+
 ## Commands
 | Command | What it does |
 |---|---|
@@ -90,6 +100,8 @@ and a clip without a credit blocks publishing.
 | `publish [--publish-at 2026-10-03T07:30:00Z]` | upload approved videos |
 | `insights [--sync]` | what worked on your channel; lessons feed the next scripts |
 | `breaking [--once] [--dry-run]` | watch for breaking political news and prepare a Short for approval |
+| `playlists` | create your topic/format playlists on YouTube |
+| `endscreen` | list published long videos that still need an end screen set up in Studio |
 | `schedule` | run unattended: produce, collect approvals, publish at set times |
 | `ui` | the point-and-click web app |
 | `stats` | subscribers, watch hours, Shorts views vs. YouTube Partner Programme thresholds |

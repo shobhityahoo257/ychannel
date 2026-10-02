@@ -20,7 +20,8 @@ in the story text given (never invent facts, numbers, names or quotes), produce:
 2. titles: 5 YouTube titles in Hindi, max 70 characters, specific and curiosity-driven, each a different angle
    (stakes / question / number-from-sources / consequence / contrast). No lies, no clickbait promises the video
    does not keep, no ALL-CAPS, no abusive or communal language.
-3. thumb_texts: 3 thumbnail texts in Hindi, 2-5 words each, punchy, readable at small size.
+3. category: the ONE best-fitting category from the allowed list (if a list is given), else empty.
+4. thumb_texts: 3 thumbnail texts in Hindi, 2-5 words each, punchy, readable at small size.
 Score every hook and title 1-10 on: grabs attention, honest to the sources, clear. Be strict: most should score 4-7."""
 
 SCHEMA = {
@@ -32,6 +33,7 @@ SCHEMA = {
             "text": {"type": "string"}, "angle": {"type": "string"}, "score": {"type": "number"}},
             "required": ["text", "score"]}},
         "thumb_texts": {"type": "array", "items": {"type": "string"}},
+        "category": {"type": "string"},
     },
     "required": ["hooks", "titles", "thumb_texts"],
 }
@@ -46,6 +48,7 @@ class Packaging:
     thumb_texts: list[str] = field(default_factory=list)
     chosen_hook: str = ""
     chosen_title: str = ""
+    category: str = ""
 
 
 def numbers(text: str) -> set[str]:
@@ -56,13 +59,16 @@ def _safe(candidate: str, allowed_numbers: set[str]) -> bool:
     return numbers(candidate) <= allowed_numbers
 
 
-def improve(client: Any, model: str, script: Script, topic: Topic, insights: str = "") -> Packaging:
+def improve(client: Any, model: str, script: Script, topic: Topic, insights: str = "",
+            categories: list[str] | None = None) -> Packaging:
     """Rewrite script.scenes[0].narration and script.title in place with the best safe options."""
     facts = " ".join(f"{s.title}. {s.summary}" for s in topic.stories[:6])
     first = script.scenes[0]
     prompt = (f"Story title: {topic.title}\nSource facts:\n{facts}\n\n"
               f"Current first scene (spoken): {first.narration}\nCurrent title: {script.title}\n"
               f"Whole script, for context:\n" + "\n".join(s.narration for s in script.scenes if s.narration))
+    if categories:
+        prompt += "\n\nAllowed categories (pick exactly one): " + " | ".join(categories)
     if insights:
         prompt += f"\n\nWhat has worked on this channel (use for style only, never for facts):\n{insights}"
     try:
@@ -72,7 +78,8 @@ def improve(client: Any, model: str, script: Script, topic: Topic, insights: str
         return Packaging()
     pk = Packaging(hooks=sorted(res.get("hooks", []), key=lambda h: -h.get("score", 0)),
                    titles=sorted(res.get("titles", []), key=lambda t: -t.get("score", 0)),
-                   thumb_texts=[t.strip() for t in res.get("thumb_texts", []) if t.strip()][:3])
+                   thumb_texts=[t.strip() for t in res.get("thumb_texts", []) if t.strip()][:3],
+                   category=res.get("category", "") if res.get("category", "") in (categories or []) else "")
     allowed = numbers(facts + " " + script.title + " " + " ".join(s.narration for s in script.scenes))
     old_words = max(1, len(first.narration.split()))
     for h in pk.hooks:

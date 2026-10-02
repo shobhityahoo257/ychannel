@@ -55,6 +55,18 @@ tts:
   style: 0.25
   speed: 1.0
 
+playlists:                     # auto-organise published videos
+  enabled: true
+  categories: ["संसद और नीति", "चुनाव", "राज्यों की राजनीति", "अर्थव्यवस्था और बजट", "विदेश नीति", "अदालत और कानून"]
+  format_playlists: {short: "रोज़ की राजनीतिक खबरें (Shorts)", long: "पूरी रिपोर्ट"}
+  watch_next_links: 3          # "Watch next" links added to each description
+  link_previous: true          # also add a link to the new video in the previous video of the same category
+  privacy: "public"
+
+endscreen:                     # long videos end with a card that leaves room for YouTube's end-screen elements
+  enabled: true
+  seconds: 12                  # YouTube allows end screens in the last 5-20 seconds
+
 clips:                         # original speech/video clips that YOU supply (never auto-downloaded)
   max_seconds: 30              # longest excerpt used from any one clip
   max_share: 0.4               # clips may be at most 40% of the finished video

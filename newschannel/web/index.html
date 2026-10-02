@@ -380,9 +380,27 @@ async function loadVideos(){
         <input type="text" data-custom="${v.id}" style="margin-top:6px" placeholder="...or type your own title" ${v.status==='published'?'disabled':''}>
         <div class="thumbs" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${(v.thumb_variants||[]).map((t,i)=>`<div data-thumb="${i}" style="aspect-ratio:16/9;cursor:pointer;outline:${(v.thumb_choice||0)===i?'3px solid var(--brand)':'1px solid var(--line)'}"><img src="${t.url}?t=${Date.now()}" title="${esc(t.text)}"></div>`).join('')}</div>
         ${v.status==='published'?'':`<div class="row" style="margin-top:8px"><button class="btn" data-a="package">Apply choices</button></div>`}</details>`:''}
+      ${v.status==='published'?`<details data-es="${v.id}"><summary>📺 End screen &amp; pinned comment ${v.endscreen_done?'✓':''}</summary><div class="esbody hint" style="margin-top:8px">Loading...</div></details>`:''}
+      ${v.playlist_error?`<div class="issue">⚠️ Playlist step: ${esc(v.playlist_error)}</div>`:''}
+      ${v.playlists&&v.playlists.length?`<div class="hint" style="margin:6px 0 0">📂 In playlists: ${v.playlists.map(esc).join(' · ')}</div>`:''}
       <details><summary>Show description</summary><pre class="log">${esc(v.description)}</pre></details></div></div>`;
+    const esEl=d.querySelector('[data-es]'); if(esEl) esEl.ontoggle=()=>{ if(esEl.open) loadEndscreen(v,esEl) };
     let thumbPick=null; d.querySelectorAll('[data-thumb]').forEach(el=>el.onclick=()=>{thumbPick=+el.dataset.thumb; d.querySelectorAll('[data-thumb]').forEach(x=>x.style.outline=x===el?'3px solid var(--brand)':'1px solid var(--line)')});
     d.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>b.dataset.a==='package'?applyPackage(v,d,thumbPick):videoAction(v,b.dataset.a)); $('#videoList').append(d)});
+}
+async function loadEndscreen(v,el){
+  const box=el.querySelector('.esbody');
+  try{ const r=await api(`/api/videos/${v.id}/endscreen`);
+    box.innerHTML=`<p style="margin:0 0 6px">YouTube does not let apps create end screens, so this last step is done by you in Studio (about 1 minute):</p>
+      <ol style="margin:0 0 8px;padding-left:18px">${r.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>
+      ${r.long?'':'<div class="issue">This is a Short: end screens work only on videos of 25+ seconds. Pin the comment below instead.</div>'}
+      <div class="row" style="margin:8px 0"><a class="btn" target="_blank" rel="noopener" href="${r.studio_url}">Open in YouTube Studio ↗</a></div>
+      ${r.suggestions.length?`<b>Good videos to link:</b><ul style="margin:4px 0;padding-left:18px">${r.suggestions.map(x=>`<li>${esc(x.title)} - <a href="${x.url}" target="_blank" rel="noopener">${x.url}</a></li>`).join('')}</ul>`:''}
+      <b>Pinned comment (copy, post, then pin it):</b><pre class="log">${esc(r.pinned_comment)}</pre>
+      <div class="row"><button class="btn" id="cpc">📋 Copy comment</button><button class="btn ${r.done?'':'ok'}" id="esd">${r.done?'Mark as not done':'✓ I did this'}</button></div>`;
+    box.querySelector('#cpc').onclick=async()=>{await navigator.clipboard.writeText(r.pinned_comment);toast('Copied')};
+    box.querySelector('#esd').onclick=async()=>{await api(`/api/videos/${v.id}/endscreen/done`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({done:!r.done})});loadVideos()};
+  }catch(e){ box.textContent=e.message }
 }
 async function applyPackage(v,d,thumbPick){
   const custom=d.querySelector('[data-custom]').value.trim(); const picked=d.querySelector(`input[name="t_${v.id}"]:checked`);

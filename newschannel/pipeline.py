@@ -23,7 +23,7 @@ from .packaging import Packaging, improve
 from .thumbnail import make_thumbnail, make_variants
 from .tts import probe_duration
 
-INTRO_SECONDS, OUTRO_SECONDS = 2.0, 4.0
+INTRO_SECONDS, OUTRO_SECONDS = 2.0, 4.0     # outro becomes the end-screen card (see endscreen.seconds)
 
 
 def manual_topic(headline: str, text: str) -> Topic:
@@ -144,7 +144,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         if breaking:
             script.scenes[0].label = "ब्रेकिंग न्यूज़"
         log("polishing hook, title and thumbnail text…")
-        pk = improve(client, model, script, topic, insights)
+        pk = improve(client, model, script, topic, insights, cfg.get("playlists", {}).get("categories", []))
         save_json(run / "packaging.json", pk)
         save_json(sp, script)
 
@@ -154,7 +154,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     durs = A.scene_durations(audios)
     long_form = not fmt.portrait
     intro = INTRO_SECONDS if long_form else 0.0
-    outro = OUTRO_SECONDS if long_form else 0.0
+    es = cfg.get("endscreen", {})
+    outro = (es.get("seconds", 12.0) if es.get("enabled", True) else OUTRO_SECONDS) if long_form else 0.0
     total = intro + sum(durs) + outro
     starts, t = [], intro
     for d in durs:
@@ -188,8 +189,11 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                                        video=clips[sc.clip_id].video))
     tshots.sort(key=lambda x: x.start)
     if outro:
-        c = render.make_card(run / "outro.jpg", fmt.width, fmt.height, brand, "चैनल को सब्सक्राइब करें",
-                             f"रोज़ ताज़ा राजनीतिक खबरें · {brand.handle}")
+        if es.get("enabled", True):     # leaves clean boxes where you place YouTube's end-screen elements in Studio
+            c = render.make_end_card(run / "outro.jpg", fmt.width, fmt.height, brand)
+        else:
+            c = render.make_card(run / "outro.jpg", fmt.width, fmt.height, brand, "चैनल को सब्सक्राइब करें",
+                                 f"रोज़ ताज़ा राजनीतिक खबरें · {brand.handle}")
         tshots.append(render.ShotT(str(c), total - outro, total, "still", graphic=True))
     if tshots:                                   # shots must tile the timeline with no gaps
         tshots[0].start = 0.0
@@ -236,7 +240,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                                     "sources before approving."))
     meta = {"id": run_id, "status": "pending", "breaking": breaking, "format": fmt_name, "title": script.title,
             "description": desc, "tags": script.tags, "topic": topic.title, "video": str(final),
-            "thumbnail": str(thumb), "thumbnails": variants,
+            "thumbnail": str(thumb), "thumbnails": variants, "category": pk.category,
             "title_options": [t["text"] for t in pk.titles], "hook": script.scenes[0].narration,
             "hook_options": [h["text"] for h in pk.hooks], "duration": round(total, 1), "video_id": None,
             "issues": [asdict(i) for i in issues],

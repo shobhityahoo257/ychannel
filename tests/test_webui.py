@@ -195,3 +195,20 @@ def test_library_api_upload_search_edit_delete_and_reuse(client):
     assert c.get("/api/videos").get_json()["videos"][0]["description"].count("PIB") >= 1
     assert c.get("/library/thumbs/../../etc.jpg").status_code == 404
     assert c.delete(f"/api/library/{pid}").status_code == 200 and c.delete(f"/api/library/{pid}").status_code == 404
+
+
+def test_endscreen_helper_endpoints(client):
+    c, tmp = client
+    store = webui.Store(tmp / "out")
+    store.add_history("Earlier", "t", "OLD1", category="चुनाव", format="long")
+    store.add_history("Latest", "t", "NEW1", category="चुनाव", format="long")
+    d = store.run_dir("rid")
+    store.save_meta("rid", {"id": "rid", "status": "published", "format": "long", "title": "Latest", "topic": "t",
+                            "video_id": "NEW1", "video": "", "thumbnail": "", "issues": [], "description": ""})
+    r = c.get("/api/videos/rid/endscreen").get_json()
+    assert r["studio_url"].endswith("/video/NEW1/editor") and r["suggestions"][0]["id"] == "OLD1" and r["long"] and not r["done"]
+    assert c.post("/api/videos/rid/endscreen/done", json={"done": True}).status_code == 200
+    assert c.get("/api/videos/rid/endscreen").get_json()["done"] is True
+    store.save_meta("pending1", {"id": "pending1", "status": "pending", "format": "short", "title": "x", "topic": "t",
+                                 "video_id": None, "video": "", "thumbnail": "", "issues": [], "description": ""}) if store.run_dir("pending1") else None
+    assert c.get("/api/videos/pending1/endscreen").status_code == 400

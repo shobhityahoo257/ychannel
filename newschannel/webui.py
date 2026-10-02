@@ -395,7 +395,8 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         for m in reversed(store().runs()):
             out.append({k: m.get(k) for k in ("id", "title", "status", "format", "duration", "issues", "clips",
                                                "description", "video_id", "created", "title_options", "hook",
-                                               "hook_options", "thumb_choice")}
+                                               "hook_options", "thumb_choice", "category", "playlists",
+                                               "playlist_error", "endscreen_done")}
                        | {"video_url": f"/files/{m['id']}/video.mp4", "thumb_url": f"/files/{m['id']}/thumbnail.jpg",
                           "thumb_variants": [{"url": f"/files/{m['id']}/{Path(t['file']).name}", "text": t["text"]}
                                              for t in m.get("thumbnails", [])]})
@@ -456,6 +457,34 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             m["thumb_choice"] = i
         s.save_meta(rid, m)
         return jsonify({"ok": True, "title": m["title"]})
+
+    @app.get("/api/videos/<rid>/endscreen")
+    def endscreen(rid: str):
+        """Checklist for the one step YouTube only allows in Studio: end screens (plus a pinned comment draft)."""
+        from . import playlists as P
+        s = store()
+        try:
+            m = s.meta(rid)
+        except OSError:
+            abort(404)
+        if not m.get("video_id"):
+            return jsonify({"error": "Publish the video first."}), 400
+        h = next((x for x in s.history() if x.get("video_id") == m["video_id"]), {"video_id": m["video_id"]})
+        out = P.endscreen_helper(h, s.history(), cfg().get("playlists", {}))
+        out["done"] = bool(m.get("endscreen_done"))
+        out["long"] = m.get("format") == "long"
+        return jsonify(out)
+
+    @app.post("/api/videos/<rid>/endscreen/done")
+    def endscreen_done(rid: str):
+        s = store()
+        try:
+            m = s.meta(rid)
+        except OSError:
+            abort(404)
+        m["endscreen_done"] = bool((request.get_json(silent=True) or {}).get("done", True))
+        s.save_meta(rid, m)
+        return jsonify({"ok": True})
 
     @app.get("/api/insights")
     def get_insights():

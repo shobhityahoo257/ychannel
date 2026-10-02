@@ -619,3 +619,28 @@ def make_card(path: Path, W: int, H: int, brand: Brand, title: str, subtitle: st
         put(d, (W / 2, y + 48), subtitle, font=small, fill=(220, 220, 230), anchor="mt")
     im.save(path, quality=95)
     return path
+
+
+def make_end_card(path: Path, W: int, H: int, brand: Brand) -> Path:
+    """End-screen background: two empty video boxes and a circle for Subscribe, matching where YouTube
+    places end-screen elements, so you can drop them on in Studio without covering anything."""
+    arr = np.zeros((H, W, 3), np.uint8)
+    g = np.linspace(1.0, 0.25, H)[:, None]
+    for c in range(3):
+        arr[..., c] = (brand.dark[c] * g * 1.1).clip(0, 255)
+    im = Image.fromarray(arr)
+    d = ImageDraw.Draw(im)
+    title = font(brand.font_bold, int(H * 0.075))
+    put(d, (W / 2, H * 0.10), "अगला वीडियो ज़रूर देखिए", font=title, fill=(255, 255, 255), anchor="mm")
+    bw, bh = int(W * 0.36), int(W * 0.36 * 9 / 16)
+    top = int(H * 0.22)
+    for x in (int(W * 0.10), int(W * 0.54)):
+        d.rounded_rectangle((x, top, x + bw, top + bh), 18, outline=(255, 255, 255), width=3)
+        d.rounded_rectangle((x - 4, top - 4, x + bw + 4, top + bh + 4), 22, outline=brand.accent, width=2)
+    r = int(H * 0.085)
+    cx, cy = W // 2, int(H * 0.80)
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=brand.accent, width=5)
+    sub = font(brand.font_regular, int(H * 0.04))
+    put(d, (cx, cy + r + int(H * 0.04)), f"सब्सक्राइब करें · {brand.handle}", font=sub, fill=(220, 220, 230), anchor="mm")
+    im.save(path, quality=95)
+    return path
