@@ -20,6 +20,7 @@ from . import sources
 from . import curate as C
 from .config import ROOT, Config
 from .llm import make_client
+from .library import Library
 from .models import Topic
 from .pipeline import manual_topic, produce
 from .review import Store
@@ -206,6 +207,94 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             abort(400)
         return jsonify({"ok": True})
 
+    # ----- photo library (inventory)
+    def library() -> Library:
+        c = cfg()
+        return Library(c.path(c["images"].get("library_dir", "library")))
+
+    def entry_json(e) -> dict[str, Any]:
+        return {"id": e.id, "caption": e.caption, "tags": e.tags, "credit": e.credit, "source": e.source,
+                "used": e.used, "added": e.added, "w": e.width, "h": e.height, "ai_tagged": e.ai_tagged,
+                "thumb": f"/library/thumbs/{e.id}.jpg", "full": f"/library/images/{e.id}.jpg"}
+
+    def ai_available() -> bool:
+        return bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"))
+
+    def autotag_async() -> None:
+        def work():
+            try:
+                c = cfg()
+                library().autotag(make_client(c), c.models()[1], limit=30)
+            except Exception:
+                pass
+        if ai_available():
+            threading.Thread(target=work, daemon=True).start()
+
+    @app.get("/api/library")
+    def library_list():
+        items = library().search(request.args.get("q", ""), request.args.get("source", ""))
+        return jsonify({"photos": [entry_json(e) for e in items], "total": len(library().all()),
+                        "untagged": sum(1 for e in library().all() if not e.caption)})
+
+    @app.post("/api/library")
+    def library_add():
+        lib, c = library(), cfg()
+        added = dupes = 0
+        for file in request.files.getlist("files"):
+            ext = Path(file.filename or "").suffix.lower()
+            if ext not in IMG_EXT:
+                continue
+            tmp = ROOT / "uploads" / f"lib_{uuid.uuid4().hex[:8]}{ext}"
+            tmp.parent.mkdir(exist_ok=True)
+            file.save(tmp)
+            try:
+                e, new = lib.add_file(tmp, request.form.get("caption", ""), request.form.get("credit", ""),
+                                      min_side=c["images"]["min_side_px"])
+            finally:
+                tmp.unlink(missing_ok=True)
+            added += bool(e and new)
+            dupes += bool(e and not new)
+        if added and c["images"].get("auto_tag", True):
+            autotag_async()
+        return jsonify({"added": added, "duplicates": dupes})
+
+    @app.post("/api/library/autotag")
+    def library_autotag():
+        if not ai_available():
+            return jsonify({"error": "Add an AI key in Settings first."}), 400
+        c = cfg()
+        try:
+            n = library().autotag(make_client(c), c.models()[1], limit=30)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"described": n})
+
+    @app.post("/api/library/<eid>")
+    def library_edit(eid: str):
+        body = request.get_json(force=True) or {}
+        tags = body.get("tags")
+        if isinstance(tags, str):
+            tags = [t for t in tags.split(",")]
+        e = library().update(eid, body.get("caption"), tags, body.get("credit"))
+        if not e:
+            abort(404)
+        return jsonify(entry_json(e))
+
+    @app.delete("/api/library/<eid>")
+    def library_delete(eid: str):
+        if not library().delete(eid):
+            abort(404)
+        return jsonify({"ok": True})
+
+    @app.get("/library/<kind>/<name>")
+    def library_file(kind: str, name: str):
+        eid = Path(name).stem
+        e = library().get(eid)
+        if kind not in ("thumbs", "images") or not e:
+            abort(404)
+        return send_file(library().thumb_path(e) if kind == "thumbs" else library().path(e), conditional=True,
+                         max_age=3600)
+
     # ----- news topics
     @app.post("/api/topics")
     def get_topics():
@@ -225,7 +314,8 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         return jsonify({"topics": out})
 
     # ----- create a video
-    def run_job(job: Job, topic: Topic, fmt: str, img_dir: Path, clip_dir: Path | None, demo: bool) -> None:
+    def run_job(job: Job, topic: Topic, fmt: str, img_dir: Path, clip_dir: Path | None, demo: bool,
+                library_ids: list[str] | None = None) -> None:
         with run_lock:
             job.status = "running"
             try:
@@ -237,7 +327,8 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                     meta = next(m for m in store().runs() if m["video"] == video)
                 else:
                     meta = produce(c, topic, fmt, make_client(c), make_tts(c), store(),
-                                   [img_dir], log=job.log, clip_folders=[clip_dir] if clip_dir else None)
+                                   [img_dir], log=job.log, clip_folders=[clip_dir] if clip_dir else None,
+                                   library_ids=library_ids)
                 job.result = {"id": meta["id"], "title": meta["title"], "issues": meta["issues"]}
                 job.status = "done"
             except Exception as exc:
@@ -285,7 +376,8 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         if spec:
             (clip_dir / "clips.txt").write_text("\n".join(spec), encoding="utf-8")
         jobs[job.id] = job
-        threading.Thread(target=run_job, args=(job, topic, fmt, img_dir, clip_dir if spec else None, demo),
+        lib_ids = [i for i in json.loads(f.get("library_ids", "[]")) if isinstance(i, str)]
+        threading.Thread(target=run_job, args=(job, topic, fmt, img_dir, clip_dir if spec else None, demo, lib_ids),
                          daemon=True).start()
         return jsonify({"job": job.id})
 

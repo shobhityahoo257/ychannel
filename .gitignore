@@ -6,3 +6,4 @@ __pycache__/
 inbox/*
 !inbox/.gitkeep
 uploads/
+library/

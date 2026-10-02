@@ -12,6 +12,7 @@ from typing import Any, Callable
 from . import audio as A
 from . import clips as clipmod
 from . import learn
+from .library import Library
 from . import media, planner, render
 from .config import Config
 from .models import Asset, SceneAudio, Script, Story, Topic, save_json, script_from_dict
@@ -40,19 +41,52 @@ def brand_from(cfg: Config) -> render.Brand:
 
 
 def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_seconds: float,
-                  extra: list[Path], log: Callable[[str], None]) -> list[Asset]:
+                  extra: list[Path], log: Callable[[str], None], library_ids: list[str] | None = None,
+                  client: Any = None, model: str = "", vision_model: str = "") -> tuple[list[Asset], list[str]]:
+    """Order of preference: photos you upload now -> photos you picked from the library ->
+    library photos the AI finds relevant -> stock. Returns (assets, library ids used)."""
     img = cfg["images"]
     inbox = cfg.path(img["inbox_dir"])
+    lib = Library(cfg.path(img.get("library_dir", "library")))
     folders = [*extra, inbox / topic.slug, inbox]
     assets = media.load_user_images(folders, run / "images", img["min_side_px"])
+    used: list[str] = []
+    if img.get("save_to_library", True):           # every photo you add becomes part of your inventory
+        for a in assets:
+            e, _ = lib.add_file(Path(a.path), a.caption if a.explicit_caption else "", a.credit)
+            if e:
+                used.append(e.id)
     log(f"user images: {len(assets)}")
+    if used and client is not None and img.get("auto_tag", True):
+        log("describing new photos for your library…")
+        lib.autotag(client, vision_model or model, limit=12)         # makes them findable later; best effort
+    for lid in library_ids or []:
+        e = lib.get(lid)
+        if e and lid not in used:
+            assets.append(lib.to_asset(e, run / "images"))
+            used.append(lid)
+    if library_ids:
+        log(f"picked from library: {len(library_ids)}")
     need = planner.needed_photos(total_seconds)
+    if img.get("use_library", True) and len(assets) < need:
+        story = f"{topic.title}. " + " ".join(s.summary for s in topic.stories[:3]) + " " + \
+            " ".join(sc.headline for sc in script.scenes)
+        for e in lib.suggest(client, model, story, min(need - len(assets), 6), set(used)):
+            assets.append(lib.to_asset(e, run / "images"))
+            used.append(e.id)
+        log(f"after library suggestions: {len(assets)}")
     if img.get("use_stock_fallback", True) and len(assets) < need:
         for sc in script.scenes:
             if len(assets) >= need:
                 break
             if sc.visual_query:
-                assets += media.fetch_stock(sc.visual_query, run / "images", img["min_side_px"], n=2)
+                got = media.fetch_stock(sc.visual_query, run / "images", img["min_side_px"], n=2)
+                assets += got
+                if img.get("save_to_library", True):
+                    for a in got:
+                        e, _ = lib.add_file(Path(a.path), a.caption, a.credit, source="stock")
+                        if e:
+                            used.append(e.id)
         log(f"after stock fallback: {len(assets)}")
     if not assets:   # last resort: clean headline cards (clearly graphics, never fake photos)
         brand = brand_from(cfg)
@@ -60,7 +94,7 @@ def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_se
         for i, sc in enumerate(script.scenes):
             p = render.make_card(run / "images" / f"card_{i}.jpg", fmt_w, fmt_h, brand, sc.headline)
             assets.append(Asset(f"card{i}", str(p), "graphic", fmt_w, fmt_h, sc.headline))
-    return assets
+    return assets, used
 
 
 def synthesize_scenes(tts, script: Script, clips: list, folder: Path) -> list[SceneAudio]:
@@ -82,7 +116,7 @@ def synthesize_scenes(tts, script: Script, clips: list, folder: Path) -> list[Sc
 def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, store: Store,
             extra_images: list[Path] | None = None, preset: str | None = None,
             log: Callable[[str], None] = print, clip_folders: list[Path] | None = None,
-            breaking: bool = False) -> dict[str, Any]:
+            breaking: bool = False, library_ids: list[str] | None = None) -> dict[str, Any]:
     fmt = cfg.fmt(fmt_name)
     if breaking:                                 # breaking news: shorter, faster, labelled
         fmt.target_seconds = cfg.get("breaking", {}).get("target_seconds", 40)
@@ -129,7 +163,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
 
     # 3. pictures: user images first, stock fallback, AI picks + arranges
     clip_total = sum(a.duration for a, sc in zip(audios, script.scenes) if sc.kind == "clip")
-    assets = gather_assets(cfg, topic, script, run, total - clip_total, extra_images or [], log)
+    assets, lib_used = gather_assets(cfg, topic, script, run, total - clip_total, extra_images or [], log,
+                                     library_ids, client, model, vision_model)
     by_id = {a.id: a for a in assets}
     log("choosing and arranging photos…")
     plan = planner.make_plan(client, vision_model, script.scenes, assets,
@@ -210,6 +245,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                        "transcript": c.transcript} for c in clips],
             "created": datetime.now(timezone.utc).isoformat()}
     store.save_meta(run_id, meta)
+    Library(cfg.path(cfg["images"].get("library_dir", "library"))).mark_used(lib_used)
     if any(i.level == "block" for i in issues):
         log("⚠ blocked by policy checks: " + "; ".join(i.msg for i in issues if i.level == "block"))
     return meta

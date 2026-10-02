@@ -34,6 +34,15 @@ Edit `config.yaml` (channel name, feeds, voice settings, formats). YouTube: crea
 "Desktop app" client in Google Cloud Console, save it as `secrets/client_secret.json`, run
 `python -m newschannel stats` once on a machine with a browser, then copy `secrets/token.json` to the server.
 
+## Photo library (your inventory)
+Every photo you add — uploaded in the web app, passed with `--images`, dropped in `inbox/`, or downloaded as stock — is saved
+to `library/` (duplicates are detected, even if resized). Open the **Photo library** tab to browse, search, edit descriptions, tags
+and **credits** (credits appear in the video description), delete, or add more photos without making a video. When creating a video,
+click **Choose from my library** to pick photos by hand; unless you turn it off (`images.use_library`), the AI also picks relevant
+photos from your inventory on its own, preferring ones you've used less. New photos get an AI caption + tags (`images.auto_tag`; it
+describes what is visible and never names people from their faces) so they can be found later. Photos stay on your computer except
+small previews sent to your AI provider for captioning and arranging.
+
 ## Using your own images
 * Drop photos in `inbox/` (used for any story) or `inbox/<topic-slug>/` (one story), or pass `--images folder`.
 * Optional `captions.txt` in the folder: `filename.jpg: what the photo shows` — helps the AI match photos to lines.

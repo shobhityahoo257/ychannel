@@ -39,6 +39,10 @@ images:
   min_side_px: 700             # reject low-res images (look bad when zoomed)
   use_stock_fallback: true     # Pexels / Wikimedia Commons when you supply too few
   max_per_scene: 3
+  library_dir: "library"       # your photo inventory: every photo you add is kept and reusable
+  save_to_library: true        # add uploaded / stock photos to the inventory automatically
+  use_library: true            # let the AI also pick relevant photos from the inventory
+  auto_tag: true               # AI writes a caption + search tags for new photos (visible content only)
 
 tts:
   provider: "auto"             # "auto" | "elevenlabs" | "openai" | "mock" (silent, for tests)

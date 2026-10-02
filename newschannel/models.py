@@ -86,6 +86,7 @@ class Asset:
     height: int = 0
     caption: str = ""
     credit: str = ""
+    explicit_caption: bool = False   # caption came from you (captions.txt / library), not the filename
 
 
 @dataclass

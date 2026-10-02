@@ -17,7 +17,8 @@ from newschannel.tts import MockTTS
 def client(tmp_path, monkeypatch):
     data = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
     data["tts"]["provider"] = "mock"
-    data["images"].update(inbox_dir=str(tmp_path / "inbox"), use_stock_fallback=False)
+    data["images"].update(inbox_dir=str(tmp_path / "inbox"), use_stock_fallback=False,
+                          library_dir=str(tmp_path / "library"))
     data["youtube"]["output_dir"] = str(tmp_path / "out")
     data["audio"]["music_dir"] = str(tmp_path / "nomusic")
     data["formats"]["short"].update(width=360, height=640, fps=12, target_seconds=12, max_scenes=5)
@@ -171,3 +172,26 @@ def test_breaking_watcher_endpoints(client, monkeypatch):
     assert c.get("/api/breaking").get_json()["running"] is True
     assert c.post("/api/breaking", json={"action": "stop"}).status_code == 200
     assert c.post("/api/breaking", json={"action": "bogus"}).status_code == 400
+
+
+def test_library_api_upload_search_edit_delete_and_reuse(client):
+    c, tmp = client
+    r = c.post("/api/library", data={"files": [(jpeg(11), "a.jpg"), (jpeg(12), "b.jpg"), (io.BytesIO(b"x"), "bad.exe")],
+                                     "caption": "", "credit": "PIB"}, content_type="multipart/form-data")
+    assert r.get_json() == {"added": 2, "duplicates": 0}
+    again = c.post("/api/library", data={"files": [(jpeg(11), "a_copy.jpg")]}, content_type="multipart/form-data").get_json()
+    assert again == {"added": 0, "duplicates": 1}
+    photos = c.get("/api/library").get_json()
+    assert photos["total"] == 2 and photos["untagged"] == 2
+    pid = photos["photos"][0]["id"]
+    assert c.get(photos["photos"][0]["thumb"]).status_code == 200 and c.get(photos["photos"][0]["full"]).status_code == 200
+    e = c.post(f"/api/library/{pid}", json={"caption": "Parliament at night", "tags": "building, night"}).get_json()
+    assert e["tags"] == ["building", "night"] and e["credit"] == "PIB"
+    assert [p["id"] for p in c.get("/api/library?q=parliament").get_json()["photos"]] == [pid]
+    # a video can use a library photo by id
+    data = {"headline": "बहस", "text": "तथ्य", "format": "short", "library_ids": json.dumps([pid])}
+    j = wait(c, c.post("/api/create", data=data, content_type="multipart/form-data").get_json()["job"])
+    assert j["status"] == "done", j["error"]
+    assert c.get("/api/videos").get_json()["videos"][0]["description"].count("PIB") >= 1
+    assert c.get("/library/thumbs/../../etc.jpg").status_code == 404
+    assert c.delete(f"/api/library/{pid}").status_code == 200 and c.delete(f"/api/library/{pid}").status_code == 404

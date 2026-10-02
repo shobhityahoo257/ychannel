@@ -46,7 +46,8 @@ def import_image(src: Path, dest_dir: Path, kind: str, caption: str = "", credit
     out = dest_dir / f"{kind}_{aid}.jpg"
     im.save(out, quality=93)
     return Asset(id=aid, path=str(out), kind=kind, width=im.width, height=im.height,
-                 caption=caption or re.sub(r"[_\-]+", " ", src.stem), credit=credit)
+                 caption=caption or re.sub(r"[_\-]+", " ", src.stem), credit=credit,
+                 explicit_caption=bool(caption))
 
 
 def load_user_images(folders: list[Path], dest: Path, min_side: int) -> list[Asset]:

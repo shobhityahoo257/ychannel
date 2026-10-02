@@ -34,6 +34,11 @@ def make_photo(path, w, h, seed):
     arr[:, :, 0] = np.linspace(base[0], 255, w).astype(np.uint8)[None, :]
     im = Image.fromarray(arr)
     d = ImageDraw.Draw(im)
+    for gx in range(8):                       # seed-dependent block pattern so each photo has a distinct hash
+        for gy in range(8):
+            if rng.random() < 0.5:
+                d.rectangle((gx * w / 8, gy * h / 8, (gx + 1) * w / 8, (gy + 1) * h / 8),
+                            fill=tuple(int(v) for v in rng.integers(0, 255, 3)))
     d.ellipse((w * .35, h * .25, w * .65, h * .75), fill=(240, 200, 160))
     d.rectangle((w * .1, h * .8, w * .9, h * .95), fill=(30, 30, 30))
     im.save(path, quality=90)
@@ -45,6 +50,7 @@ def cfg(tmp_path):
     c.data["tts"]["provider"] = "mock"
     c.data["images"]["inbox_dir"] = str(tmp_path / "inbox")
     c.data["images"]["use_stock_fallback"] = False
+    c.data["images"]["library_dir"] = str(tmp_path / "library")
     c.data["youtube"]["output_dir"] = str(tmp_path / "out")
     c.data["audio"]["music_dir"] = str(tmp_path / "nomusic")
     c.data["formats"]["short"].update(width=360, height=640, fps=12, target_seconds=12, max_scenes=5)
