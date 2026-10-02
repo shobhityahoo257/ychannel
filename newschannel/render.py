@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import bisect
 import math
+import re
 import os
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
@@ -44,6 +45,7 @@ class ShotT:
     fx: float = 0.5
     fy: float = 0.5
     graphic: bool = False
+    video: str = ""           # trimmed original clip (plays from its first frame at `start`)
 
 
 @dataclass
@@ -62,6 +64,13 @@ class Strap:
 
 
 @dataclass
+class TextSpan:
+    start: float
+    end: float
+    text: str
+
+
+@dataclass
 class Timeline:
     width: int
     height: int
@@ -72,6 +81,8 @@ class Timeline:
     straps: list[Strap] = field(default_factory=list)
     words: list[CapWord] = field(default_factory=list)
     ticker: str = ""
+    subs: list[TextSpan] = field(default_factory=list)       # subtitles for original clips
+    credits: list[TextSpan] = field(default_factory=list)    # "स्रोत: ..." while a clip plays
     main_start: float = 0.0
     main_end: float = 0.0
     preset: str = "fast"
@@ -84,12 +95,58 @@ def hex_rgb(h: str) -> tuple[int, int, int]:
 
 
 # ----------------------------------------------------------------------------- helpers
+_LATIN = re.compile(r"[A-Za-z&@•·]")
+_DEVA = re.compile("[\u0900-\u097F\u200c\u200d]")
+
+
+class Face:
+    """Devanagari font + Latin companion. Noto Sans Devanagari has no A-Z glyphs, so English
+    words (BJP, PM, 'Sansad TV') would render as boxes; text is split into runs per font."""
+
+    def __init__(self, dev_path: str, size: int):
+        self.size = size
+        self.dev = ImageFont.truetype(dev_path, size, layout_engine=ImageFont.Layout.RAQM)
+        lat = Path(dev_path).with_name(Path(dev_path).name.replace("NotoSansDevanagari", "NotoSans"))
+        self.lat = ImageFont.truetype(str(lat if lat.exists() else dev_path), size,
+                                      layout_engine=ImageFont.Layout.RAQM)
+
+    def runs(self, text: str) -> list[tuple[ImageFont.FreeTypeFont, str]]:
+        out: list[tuple[ImageFont.FreeTypeFont, str]] = []
+        cur, buf = None, ""
+        for ch in text:
+            # letters pick their font; spaces/digits/punctuation stay with the current run
+            f = self.lat if _LATIN.match(ch) else self.dev if _DEVA.match(ch) else (cur or self.dev)
+            if f is not cur and buf:
+                out.append((cur, buf))
+                buf = ""
+            cur, buf = f, buf + ch
+        if buf:
+            out.append((cur, buf))
+        return out
+
+    def getlength(self, text: str) -> float:
+        return sum(f.getlength(t) for f, t in self.runs(text))
+
+
 @lru_cache(maxsize=32)
-def font(path: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(path, size, layout_engine=ImageFont.Layout.RAQM)
+def font(path: str, size: int) -> Face:
+    return Face(path, size)
 
 
-def wrap(text: str, f: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
+def put(d: ImageDraw.ImageDraw, xy, text: str, font: Face, fill=None, anchor: str = "la",
+        stroke_width: int = 0, stroke_fill=None) -> None:
+    """Draw text with run-level font fallback. Anchor: horizontal l/m/r + vertical a/t/m."""
+    x, y = xy
+    total = font.getlength(text)
+    asc, desc = font.dev.getmetrics()
+    x -= {"l": 0, "m": total / 2, "r": total}[anchor[0]]
+    base = y + (asc - desc) / 2 if anchor[1] == "m" else y + asc
+    for f, t in font.runs(text):
+        d.text((x, base), t, font=f, fill=fill, anchor="ls", stroke_width=stroke_width, stroke_fill=stroke_fill)
+        x += f.getlength(t)
+
+
+def wrap(text: str, f: Face, max_w: int) -> list[str]:
     lines, cur = [], ""
     for w in text.split():
         trial = f"{cur} {w}".strip()
@@ -196,7 +253,7 @@ def make_bug(tl: Timeline) -> Image.Image:
     if logo:
         im.paste(logo, (x, (h - logo.height) // 2), logo)
         x += logo.width + pad // 2
-    d.text((x, h / 2), b.name, font=f, fill=(255, 255, 255, 255), anchor="lm")
+    put(d, (x, h / 2), b.name, font=f, fill=(255, 255, 255, 255), anchor="lm")
     return im
 
 
@@ -216,9 +273,9 @@ def make_strap(tl: Timeline, s: Strap) -> Image.Image:
     d.rectangle((0, tag_h, box_w, tag_h + box_h), fill=(*b.dark, 232))
     d.rectangle((0, tag_h, int(size * 0.18), tag_h + box_h), fill=(*b.accent, 255))
     d.rectangle((0, 0, tag_w, tag_h), fill=(*b.accent, 255))
-    d.text((tag_w / 2, tag_h / 2), s.label, font=tag_f, fill=(255, 255, 255, 255), anchor="mm")
+    put(d, (tag_w / 2, tag_h / 2), s.label, font=tag_f, fill=(255, 255, 255, 255), anchor="mm")
     for i, line in enumerate(lines):
-        d.text((int(size * 0.5), tag_h + int(size * 0.25) + i * lh), line, font=f, fill=(255, 255, 255, 255))
+        put(d, (int(size * 0.5), tag_h + int(size * 0.25) + i * lh), line, font=f, fill=(255, 255, 255, 255))
     return im
 
 
@@ -236,7 +293,7 @@ def make_ticker_strip(tl: Timeline, h: int) -> tuple[Image.Image, int, int]:
     x, r = 0, h * 0.16
     for _ in range(reps):
         for t in items:
-            d.text((x, h / 2), t, font=f, fill=(255, 255, 255), anchor="lm")
+            put(d, (x, h / 2), t, font=f, fill=(255, 255, 255), anchor="lm")
             x += int(f.getlength(t)) + gap // 2
             d.polygon([(x, h / 2 - r), (x + r, h / 2), (x, h / 2 + r), (x - r, h / 2)], fill=b.accent)
             x += gap // 2
@@ -268,6 +325,48 @@ def build_chunks(words: list[CapWord], portrait: bool) -> list[Chunk]:
     return chunks
 
 
+class ClipReader:
+    """Streams raw frames of a trimmed clip through ffmpeg, fitted to the frame
+    (sharp video over a blurred copy of itself when the aspect differs)."""
+
+    def __init__(self, path: str, W: int, H: int, fps: int):
+        self.path, self.W, self.H, self.fps = path, W, H, fps
+        self.proc: subprocess.Popen | None = None
+        self.next_idx = 0
+        self.last: Image.Image | None = None
+        self.size = W * H * 3
+
+    def _start(self, idx: int) -> None:
+        self.close()
+        W, H = self.W, self.H
+        vf = (f"split=2[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+              f"boxblur=24:3,eq=brightness=-0.15[bg];[b]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];"
+              f"[bg][fg]overlay=(W-w)/2:(H-h)/2,fps={self.fps},format=rgb24")
+        self.proc = subprocess.Popen(
+            ["ffmpeg", "-v", "error", "-ss", f"{idx / self.fps:.4f}", "-i", self.path, "-vf", vf,
+             "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.next_idx = idx
+
+    def get(self, t_rel: float) -> Image.Image:
+        idx = max(0, int(round(t_rel * self.fps)))
+        if self.proc is None or idx < self.next_idx - 1 or idx - self.next_idx > self.fps * 2:
+            self._start(idx)
+        while self.proc is not None and self.next_idx <= idx:
+            buf = self.proc.stdout.read(self.size)           # type: ignore[union-attr]
+            if len(buf) < self.size:                           # clip ended: hold the last frame
+                self.proc = None
+                break
+            self.last = Image.frombytes("RGB", (self.W, self.H), buf)
+            self.next_idx += 1
+        return self.last if self.last is not None else Image.new("RGB", (self.W, self.H))
+
+    def close(self) -> None:
+        if self.proc is not None:
+            self.proc.kill()
+            self.proc.wait()
+            self.proc = None
+
+
 class Composer:
     """Per-process frame factory; keeps small caches so chunks render sequentially and fast."""
 
@@ -288,6 +387,40 @@ class Composer:
             self.ticker = make_ticker_strip(tl, self.tick_h)
             self.tick_label = self._ticker_label()
         self.black = Image.new("RGB", (self.W, self.H))
+        self.readers: dict[str, ClipReader] = {}
+        self.sub_cache: dict[int, Image.Image] = {}
+        self.credit_imgs = [self._credit_image(c.text) for c in tl.credits]
+
+    def close(self) -> None:
+        for r in self.readers.values():
+            r.close()
+
+    def _credit_image(self, text: str) -> Image.Image:
+        b = self.tl.brand
+        size = int(self.W * (0.034 if self.portrait else 0.017))
+        f = font(b.font_bold, size)
+        w, h = int(f.getlength(text)) + size, int(size * 1.7)
+        im = rounded((w, h), (*b.accent, 235), h // 2)
+        put(ImageDraw.Draw(im), (w / 2, h / 2), text, font=f, fill=(255, 255, 255, 255), anchor="mm")
+        return im
+
+    def _sub_image(self, i: int) -> Image.Image:
+        if i in self.sub_cache:
+            return self.sub_cache[i]
+        size = int(self.W * (0.052 if self.portrait else 0.027))
+        f = font(self.tl.brand.font_bold, size)
+        lines = wrap(self.tl.subs[i].text, f, int(self.W * (0.84 if self.portrait else 0.74)))[:3]
+        lh = int(size * 1.4)
+        w = int(max(f.getlength(x) for x in lines)) + size * 2
+        h = lh * len(lines) + int(size * 0.6)
+        im = rounded((w, h), (0, 0, 0, 175), int(size * 0.4))
+        d = ImageDraw.Draw(im)
+        for k, line in enumerate(lines):
+            put(d, (w / 2, int(size * 0.3) + k * lh), line, font=f, fill=(255, 255, 255, 255), anchor="ma")
+        if len(self.sub_cache) > 8:
+            self.sub_cache.clear()
+        self.sub_cache[i] = im
+        return im
 
     # -- shots
     def canvas(self, s: ShotT) -> Image.Image:
@@ -299,6 +432,11 @@ class Composer:
         return self.canvases[key]
 
     def shot_frame(self, s: ShotT, t: float) -> Image.Image:
+        if s.video:
+            rd = self.readers.get(s.video)
+            if rd is None:
+                rd = self.readers[s.video] = ClipReader(s.video, self.W, self.H, self.tl.fps)
+            return rd.get(t - s.start)
         p = (t - s.start) / max(1e-6, s.end - s.start)
         return ken_burns(self.canvas(s), self.W, self.H, "still" if s.graphic else s.motion,
                          min(1.0, max(0.0, p)), t)
@@ -317,7 +455,7 @@ class Composer:
         b, h = self.tl.brand, self.tick_h
         _, _, lw = self.ticker
         im = Image.new("RGB", (lw, h), b.accent)
-        ImageDraw.Draw(im).text((lw / 2, h / 2), "सुर्खियाँ", font=font(b.font_bold, int(h * 0.56)),
+        put(ImageDraw.Draw(im), (lw / 2, h / 2), "सुर्खियाँ", font=font(b.font_bold, int(h * 0.56)),
                                 fill=(255, 255, 255), anchor="mm")
         return im
 
@@ -350,7 +488,7 @@ class Composer:
             x = (self.W - total) / 2
             for i in idxs:
                 color = (255, 214, 10, 255) if i == active else (255, 255, 255, 255)
-                d.text((x, pad + li * lh), ch.words[i].text, font=f, fill=color,
+                put(d, (x, pad + li * lh), ch.words[i].text, font=f, fill=color,
                        stroke_width=max(3, size // 12), stroke_fill=(0, 0, 0, 255))
                 x += f.getlength(ch.words[i].text) + space
         self.cap_cache[key] = (im, len(lines))
@@ -385,6 +523,17 @@ class Composer:
             else:
                 y = H - (self.tick_h if self.ticker else 0) - 30 - im.height
             frame.paste(im, (0, y), im)
+        # original-clip subtitles + source credit
+        for k, c in enumerate(tl.credits):
+            if c.start <= t < c.end:
+                im = self.credit_imgs[k]
+                frame.paste(im, (W - im.width - int(W * 0.04), int(H * (0.058 if self.portrait else 0.05))), im)
+                break
+        si = bisect.bisect_right([x.start for x in tl.subs], t) - 1
+        if si >= 0 and t < tl.subs[si].end:
+            im = self._sub_image(si)
+            y = int(H * 0.72) if self.portrait else H - (self.tick_h if self.ticker else 0) - 24 - im.height
+            frame.paste(im, ((W - im.width) // 2, y), im)
         # ticker
         if self.ticker:
             strip, unit, lw = self.ticker
@@ -413,8 +562,11 @@ def _render_chunk(args: tuple[Timeline, int, int, str]) -> str:
            "-g", str(tl.fps * 2), "-bf", "2", "-an", out]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     assert proc.stdin
-    for f in range(f0, f1):
-        proc.stdin.write(comp.frame(f / tl.fps).tobytes())
+    try:
+        for f in range(f0, f1):
+            proc.stdin.write(comp.frame(f / tl.fps).tobytes())
+    finally:
+        comp.close()
     proc.stdin.close()
     if proc.wait() != 0:
         raise RuntimeError(f"ffmpeg failed for chunk {f0}-{f1}")
@@ -460,10 +612,10 @@ def make_card(path: Path, W: int, H: int, brand: Brand, title: str, subtitle: st
     lh = int(big.size * 1.4)
     y = H / 2 - lh * len(lines) / 2 - (small.size if subtitle else 0)
     for line in lines:
-        d.text((W / 2, y), line, font=big, fill=(255, 255, 255), anchor="mt")
+        put(d, (W / 2, y), line, font=big, fill=(255, 255, 255), anchor="mt")
         y += lh
     d.rectangle((W / 2 - W * 0.12, y + 14, W / 2 + W * 0.12, y + 22), fill=brand.accent)
     if subtitle:
-        d.text((W / 2, y + 48), subtitle, font=small, fill=(220, 220, 230), anchor="mt")
+        put(d, (W / 2, y + 48), subtitle, font=small, fill=(220, 220, 230), anchor="mt")
     im.save(path, quality=95)
     return path

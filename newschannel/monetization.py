@@ -32,8 +32,29 @@ def _jaccard(a: str, b: str) -> float:
 
 
 def policy_check(script: Script, topic: Topic, assets: list[Asset], history: list[dict],
-                 max_per_day: int = 4, min_sources: int = 2) -> list[Issue]:
+                 max_per_day: int = 4, min_sources: int = 2, clips: list | None = None,
+                 total_seconds: float = 0.0, max_clip_share: float = 0.4) -> list[Issue]:
     issues: list[Issue] = []
+    clips = clips or []
+    clip_secs = sum(c.duration for c in clips)
+    for i, c in enumerate(clips):
+        if not c.credit.strip():
+            issues.append(Issue("block", f"Clip {i} ({c.note}) has no source credit; add it in clips.txt."))
+        if c.requested_seconds > c.duration + 0.5:
+            issues.append(Issue("warn", f"Clip {i} trimmed to {c.duration:.0f}s (you asked for {c.requested_seconds:.0f}s): "
+                                        "short excerpts are safer for copyright."))
+        if c.machine_translated:
+            issues.append(Issue("warn", f"Clip {i} subtitles are machine-translated ({c.language}->hi): "
+                                        "check them against the original before approving."))
+        if not c.subs and c.transcript == "":
+            issues.append(Issue("warn", f"Clip {i} has no subtitles/transcript; verify what is said."))
+    if total_seconds and clip_secs / total_seconds > max_clip_share:
+        issues.append(Issue("block", f"Original clips are {100 * clip_secs / total_seconds:.0f}% of the video "
+                                     f"(max {100 * max_clip_share:.0f}%): too much of someone else's footage "
+                                     "risks copyright claims and 'reused content' demonetization."))
+    if clips:
+        issues.append(Issue("warn", "Confirm you have the right to use each clip (official/PIB/Sansad TV/your own, "
+                                    "or a short news-reporting excerpt). Content ID may still claim it."))
     if len(topic.sources) < min_sources and topic.stories and topic.stories[0].source != "manual":  # manual = your own reporting
         issues.append(Issue("block", f"Only {len(topic.sources)} outlet(s) report this; need {min_sources} "
                                      "(uncorroborated political claims are a defamation/misinformation risk)."))

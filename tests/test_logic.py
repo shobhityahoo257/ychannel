@@ -63,3 +63,31 @@ def test_alignment_words():
           "character_end_times_seconds": [.1, .2, .3, .4, .5]}
     w = words_from_alignment(al)
     assert [x.text for x in w] == ["हम", "चल"] and w[1].start == .3
+
+
+def test_mixed_script_runs_switch_fonts_both_ways():
+    from newschannel.render import font
+    f = font("assets/fonts/NotoSansDevanagari-Bold.ttf", 40)
+    kinds = [("lat" if fn is f.lat else "dev", t.strip()) for fn, t in f.runs("BJP और NDA बैठक")]
+    assert kinds == [("lat", "BJP"), ("dev", "और"), ("lat", "NDA"), ("dev", "बैठक")]
+
+
+def test_clip_fix_places_every_clip_once_and_never_first():
+    from newschannel.clips import Clip
+    from newschannel.scriptwriter import fix_clip_scenes
+    clips = [Clip("a.mp4", 0, 5, "PIB", "n1"), Clip("b.mp4", 0, 5, "PIB", "n2")]
+    sc = Script("t", "d", [], [Scene("", "h", kind="clip", clip_id=1), Scene("x", "h"), Scene("y", "h"),
+                               Scene("", "h", kind="clip", clip_id=1)])
+    fix_clip_scenes(sc, clips)
+    ids = [s.clip_id for s in sc.scenes if s.kind == "clip"]
+    assert sorted(ids) == [0, 1] and sc.scenes[0].kind != "clip"
+
+
+def test_clips_txt_parsing_and_cap(tmp_path):
+    import subprocess
+    from newschannel.clips import discover
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=10:duration=70",
+                    str(tmp_path / "s.mp4")], check=True)
+    (tmp_path / "clips.txt").write_text("s.mp4: 0:10-1:05 | PIB | भाषण\n", encoding="utf-8")
+    c = discover([tmp_path], 30)[0]
+    assert (c.start, c.duration, c.credit, c.requested_seconds) == (10.0, 30.0, "PIB", 55.0)

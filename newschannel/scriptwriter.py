@@ -20,7 +20,11 @@ SYSTEM = """तुम एक अनुभवी हिंदी न्यूज�
 7. आख़िरी दृश्य: एक पंक्ति का सार + दर्शकों से सवाल/सब्सक्राइब का निमंत्रण।
 8. visual_query: अंग्रेज़ी में 2-4 शब्द का सामान्य फ़ोटो-सर्च (जैसे "Indian parliament building", "voters queue India"), कभी किसी व्यक्ति का नाम नहीं।
 9. headline: स्क्रीन पर दिखने वाली छोटी हिंदी हेडलाइन (50 अक्षर तक)।
-10. title: YouTube शीर्षक, हिंदी, 70 अक्षर तक, सनसनीखेज़ झूठ/क्लिकबेट नहीं, पर जिज्ञासा जगाने वाला।"""
+10. अगर वीडियो-क्लिप (भाषण/बयान) दिए गए हैं: हर क्लिप के लिए ठीक एक दृश्य kind="clip" बनाओ (clip_id के साथ, narration ख़ाली "")।
+    क्लिप से ठीक पहले वाला दृश्य उसका परिचय दे (कौन, कहाँ, किस संदर्भ में), और क्लिप के बाद वाला दृश्य उसका सार/संदर्भ/विश्लेषण दे।
+    क्लिप में जो बोला गया है उसे सिर्फ़ दिए गए transcript के आधार पर बताओ; अपनी तरफ़ से कोई बात उनके मुँह में मत डालो और संदर्भ से काटकर अर्थ मत बदलो।
+    क्लिप का दृश्य पहला दृश्य न हो (पहले hook बोलो)।
+11. title: YouTube शीर्षक, हिंदी, 70 अक्षर तक, सनसनीखेज़ झूठ/क्लिकबेट नहीं, पर जिज्ञासा जगाने वाला।"""
 
 SCHEMA = {
     "type": "object",
@@ -35,9 +39,10 @@ SCHEMA = {
                 "headline": {"type": "string"},
                 "visual_query": {"type": "string"},
                 "label": {"type": "string"},
-                "kind": {"type": "string", "enum": ["news", "analysis", "outro"]},
+                "kind": {"type": "string", "enum": ["news", "analysis", "outro", "clip"]},
+                "clip_id": {"type": "integer", "description": "Only for kind=clip: which supplied clip plays here"},
             },
-            "required": ["narration", "headline", "visual_query", "kind"]}},
+            "required": ["narration", "headline", "kind"]}},
     },
     "required": ["title", "description", "tags", "scenes"],
 }
@@ -50,13 +55,14 @@ def _source_pack(topic: Topic) -> str:
     return "\n\n".join(parts)
 
 
-def budget(fmt: Format) -> tuple[int, int]:
-    target = int(fmt.target_seconds * WORDS_PER_SEC)
+def budget(fmt: Format, clip_seconds: float = 0.0) -> tuple[int, int]:
+    """Word range for the spoken narration; original clip time is not narrated."""
+    target = int(max(fmt.target_seconds * 0.35, fmt.target_seconds - clip_seconds) * WORDS_PER_SEC)
     return int(target * 0.7), int(target * 1.3)
 
 
-def validate(script: Script, fmt: Format) -> list[str]:
-    lo, hi = budget(fmt)
+def validate(script: Script, fmt: Format, clips: list | None = None) -> list[str]:
+    lo, hi = budget(fmt, sum(c.duration for c in clips or []))
     problems = []
     if not (lo <= script.word_count <= hi):
         problems.append(f"Narration has {script.word_count} words; it must be between {lo} and {hi}.")
@@ -66,17 +72,35 @@ def validate(script: Script, fmt: Format) -> list[str]:
         problems.append("Include one scene with kind=analysis.")
     if len(script.title) > 100:
         problems.append("Title must be at most 100 characters.")
-    if any(not s.narration.strip() for s in script.scenes):
+    if any(not s.narration.strip() for s in script.scenes if s.kind != "clip"):
         problems.append("A scene has empty narration.")
+    n = len(clips or [])
+    placed = sorted(-1 if s.clip_id is None else s.clip_id for s in script.scenes if s.kind == "clip")
+    if placed != list(range(n)):
+        problems.append(f"Provide exactly one kind=clip scene for each clip id 0..{n - 1} (got {placed}).")
+    if script.scenes and script.scenes[0].kind == "clip":
+        problems.append("The first scene must be spoken narration, not a clip.")
     return problems
 
 
-def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: str) -> Script:
-    lo, hi = budget(fmt)
+def _clip_pack(clips: list) -> str:
+    if not clips:
+        return ""
+    parts = ["\n\nवीडियो-क्लिप (मूल):"]
+    for i, c in enumerate(clips):
+        parts.append(f"clip_id={i} | स्रोत: {c.credit or 'अज्ञात'} | अवधि: {c.duration:.0f}s | संदर्भ: {c.note}\n"
+                     f"जो बोला गया (transcript): {c.transcript[:1500] or '(उपलब्ध नहीं)'}")
+    return "\n".join(parts)
+
+
+def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: str,
+                 clips: list | None = None) -> Script:
+    clips = clips or []
+    lo, hi = budget(fmt, sum(c.duration for c in clips))
     kind = "YouTube Short (vertical, fast, ~%ds)" % fmt.target_seconds if fmt.portrait \
         else "long-form news video (~%d minutes)" % round(fmt.target_seconds / 60)
     base = (f"चैनल: {channel}\nफ़ॉर्मैट: {kind}\nकुल बोली जाने वाली लंबाई: {lo}–{hi} शब्द, "
-            f"अधिकतम {fmt.max_scenes} दृश्य।\nविषय: {topic.title}\n\nस्रोत:\n{_source_pack(topic)}")
+            f"अधिकतम {fmt.max_scenes} दृश्य।\nविषय: {topic.title}\n\nस्रोत:\n{_source_pack(topic)}{_clip_pack(clips)}")
     feedback = ""
     script = None
     for _ in range(2):
@@ -86,21 +110,23 @@ def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: st
             tags=[t.strip() for t in res.get("tags", [])][:12],
             scenes=[Scene(narration=s["narration"].strip(), headline=s["headline"].strip(),
                           visual_query=s.get("visual_query", ""), label=s.get("label", ""),
-                          kind=s.get("kind", "news")) for s in res["scenes"]],
+                          kind=s.get("kind", "news"),
+                          clip_id=s.get("clip_id") if s.get("kind") == "clip" else None)
+                    for s in res["scenes"]],
             sources=topic.sources,
         )
-        problems = validate(script, fmt)
+        problems = validate(script, fmt, clips)
         if not problems:
             break
         feedback = "\n\nपिछली स्क्रिप्ट में ये समस्याएँ थीं, ठीक करो:\n- " + "\n- ".join(problems)
     assert script is not None
     for s in script.scenes:
-        s.label = s.label or ("विश्लेषण" if s.kind == "analysis" else "ताज़ा खबर")
+        s.label = s.label or {"analysis": "विश्लेषण", "clip": "मूल वीडियो"}.get(s.kind, "ताज़ा खबर")
     return script
 
 
 def build_description(script: Script, topic: Topic, cfg_channel: dict, short: bool,
-                      credits: list[str], ai_note: bool = True) -> str:
+                      credits: list[str], ai_note: bool = True, clips: list | None = None) -> str:
     lines = [script.description, ""]
     lines.append("स्रोत / Sources:")
     seen = set()
@@ -108,6 +134,8 @@ def build_description(script: Script, topic: Topic, cfg_channel: dict, short: bo
         if st.link not in seen:
             seen.add(st.link)
             lines.append(f"• {st.source}: {st.link}")
+    if clips:
+        lines += ["", "वीडियो अंश / Video excerpts:"] + [f"• {c.credit}: {c.note}" for c in clips]
     if credits:
         lines += ["", "तस्वीरें / Image credits:"] + [f"• {c}" for c in credits]
     if ai_note:
@@ -119,3 +147,25 @@ def build_description(script: Script, topic: Topic, cfg_channel: dict, short: bo
         tags.insert(0, "#Shorts")
     lines.append(" ".join(tags))
     return "\n".join(lines)[:4900]
+
+
+def fix_clip_scenes(script: Script, clips: list) -> None:
+    """Guarantee every clip plays exactly once and never as the very first scene,
+    even if the model got it wrong after retries."""
+    seen: set[int] = set()
+    keep = []
+    for sc in script.scenes:
+        if sc.kind == "clip":
+            if sc.clip_id is None or not (0 <= sc.clip_id < len(clips)) or sc.clip_id in seen:
+                continue
+            seen.add(sc.clip_id)
+            sc.narration = ""
+        keep.append(sc)
+    script.scenes = keep
+    for i, c in enumerate(clips):
+        if i not in seen:
+            pos = min(len(script.scenes), 2 + len(seen))
+            script.scenes.insert(pos, Scene("", (c.note or "मूल वीडियो")[:50], "", "मूल वीडियो", "clip", i))
+            seen.add(i)
+    if script.scenes and script.scenes[0].kind == "clip":
+        script.scenes.insert(1 if len(script.scenes) > 1 else 0, script.scenes.pop(0))

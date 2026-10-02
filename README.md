@@ -27,6 +27,19 @@ Edit `config.yaml` (channel name, feeds, voice settings, formats). YouTube: crea
   focus point so faces stay in frame, picks the motion, and fills gaps with stock (Pexels / Wikimedia, credited in the description).
 * Photos under `min_side_px` are rejected (they look blurry when zoomed).
 
+## Using speech / video clips (e.g. a politician's statement)
+The tool never downloads copyrighted footage — **you supply the clip** (Sansad TV, PIB, official channels, your own recording).
+```
+inbox/my-story/clips/
+    speech.mp4
+    clips.txt      # speech.mp4: 00:12-00:38 | Sansad TV | लोकसभा में बजट पर भाषण
+```
+or `python -m newschannel make --headline "…" --clips ./clips`. It then: trims the excerpt (max `clips.max_seconds`),
+normalises loudness, keeps the original audio, transcribes the speech (ElevenLabs Scribe), writes Hindi subtitles
+(machine-translated from English etc. — you are warned to verify), shows a **"स्रोत: …"** credit and a "मूल वीडियो" strap, and lists the source
+in the description. The script writer introduces the clip and analyses it afterwards; clips may be at most 40% of the video,
+and a clip without a credit blocks publishing.
+
 ## Commands
 | Command | What it does |
 |---|---|

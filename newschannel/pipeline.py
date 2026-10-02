@@ -9,14 +9,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import audio as A
+from . import clips as clipmod
 from . import media, planner, render
 from .config import Config
-from .models import Asset, Script, Story, Topic, save_json, script_from_dict
+from .models import Asset, SceneAudio, Script, Story, Topic, save_json, script_from_dict
 from .monetization import policy_check
 from .review import Store
-from .scriptwriter import build_description, write_script
+from .scriptwriter import build_description, fix_clip_scenes, write_script
 from .thumbnail import make_thumbnail
-from .tts import synthesize_script
+from .tts import probe_duration
 
 INTRO_SECONDS, OUTRO_SECONDS = 2.0, 4.0
 
@@ -59,14 +60,36 @@ def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_se
     return assets
 
 
+def synthesize_scenes(tts, script: Script, clips: list, folder: Path) -> list[SceneAudio]:
+    """Voice for spoken scenes; original (loudness-normalised) audio for clip scenes."""
+    folder.mkdir(parents=True, exist_ok=True)
+    out: list[SceneAudio] = []
+    sc = script.scenes
+    for i, s in enumerate(sc):
+        if s.kind == "clip":
+            c = clips[s.clip_id]
+            out.append(SceneAudio(c.wav, probe_duration(c.wav), [], lead=0.0, tail=0.0))
+            continue
+        prev = sc[i - 1].narration[-200:] if i else ""
+        nxt = sc[i + 1].narration[:200] if i + 1 < len(sc) else ""
+        out.append(tts.synthesize(s.narration, folder / f"scene_{i:02d}.mp3", prev, nxt))
+    return out
+
+
 def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, store: Store,
             extra_images: list[Path] | None = None, preset: str | None = None,
-            log: Callable[[str], None] = print) -> dict[str, Any]:
+            log: Callable[[str], None] = print, clip_folders: list[Path] | None = None) -> dict[str, Any]:
     fmt = cfg.fmt(fmt_name)
     run_id = f"{datetime.now().strftime('%Y%m%d')}-{topic.slug}-{fmt_name}"
     run = store.run_dir(run_id)
     brand = brand_from(cfg)
     model = cfg["llm"]["model"]
+
+    # 0. original clips (speeches etc.) supplied by you: trim, normalise, transcribe, subtitle
+    clips = clipmod.load(cfg, [*(clip_folders or []), cfg.path(cfg["images"]["inbox_dir"]) / topic.slug / "clips"],
+                         run, client, fmt.fps)
+    if clips:
+        log(f"clips: {len(clips)} ({sum(c.duration for c in clips):.0f}s of original footage)")
 
     # 1. script (cached so a failed render does not re-bill the LLM)
     sp = run / "script.json"
@@ -74,12 +97,13 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         script = script_from_dict(json.loads(sp.read_text(encoding="utf-8")))
     else:
         log("writing script…")
-        script = write_script(client, model, topic, fmt, cfg["channel"]["name"])
+        script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips)
+        fix_clip_scenes(script, clips)
         save_json(sp, script)
 
     # 2. narration
     log("synthesizing voice…")
-    audios = synthesize_script(tts, script.scenes, run / "audio")
+    audios = synthesize_scenes(tts, script, clips, run / "audio")
     durs = A.scene_durations(audios)
     long_form = not fmt.portrait
     intro = INTRO_SECONDS if long_form else 0.0
@@ -91,7 +115,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         t += d
 
     # 3. pictures: user images first, stock fallback, AI picks + arranges
-    assets = gather_assets(cfg, topic, script, run, total, extra_images or [], log)
+    clip_total = sum(a.duration for a, sc in zip(audios, script.scenes) if sc.kind == "clip")
+    assets = gather_assets(cfg, topic, script, run, total - clip_total, extra_images or [], log)
     by_id = {a.id: a for a in assets}
     log("choosing and arranging photos…")
     plan = planner.make_plan(client, cfg["llm"]["vision_model"], script.scenes, assets,
@@ -109,6 +134,11 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         a = by_id[s.asset_id]
         tshots.append(render.ShotT(a.path, s.start, s.end, s.motion, s.focus_x, s.focus_y,
                                    graphic=a.kind == "graphic"))
+    for i, sc in enumerate(script.scenes):
+        if sc.kind == "clip":
+            tshots.append(render.ShotT("", starts[i], starts[i] + durs[i], "still",
+                                       video=clips[sc.clip_id].video))
+    tshots.sort(key=lambda x: x.start)
     if outro:
         c = render.make_card(run / "outro.jpg", fmt.width, fmt.height, brand, "चैनल को सब्सक्राइब करें",
                              f"रोज़ ताज़ा राजनीतिक खबरें · {brand.handle}")
@@ -116,8 +146,12 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     if tshots:                                   # shots must tile the timeline with no gaps
         tshots[0].start = 0.0
         tshots[-1].end = total
-    words, straps = [], []
+    words, straps, subs, credits = [], [], [], []
     for i, (sc, au) in enumerate(zip(script.scenes, audios)):
+        if sc.kind == "clip":
+            c = clips[sc.clip_id]
+            subs += [render.TextSpan(starts[i] + x.start, starts[i] + x.end, x.text) for x in c.subs]
+            credits.append(render.TextSpan(starts[i], starts[i] + durs[i], f"स्रोत: {c.credit}"))
         words += [render.CapWord(w.text, starts[i] + A.LEAD_IN + w.start, starts[i] + A.LEAD_IN + w.end)
                   for w in au.words]
         s0 = starts[i] + 0.2
@@ -125,7 +159,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     tl = render.Timeline(
         fmt.width, fmt.height, fmt.fps, total, tshots, brand, straps,
         words if fmt.captions else [], "|".join(s.headline for s in script.scenes) if fmt.ticker else "",
-        main_start=intro, main_end=total - outro, preset=preset or "fast")
+        subs=subs, credits=credits, main_start=intro, main_end=total - outro, preset=preset or "fast")
 
     # 5. render + sound
     log(f"rendering {total:.0f}s {fmt.width}x{fmt.height}…")
@@ -141,13 +175,16 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     # 6. description, policy gate, meta
     credits = sorted({a.credit for a in assets if a.credit})
     desc = build_description(script, topic, cfg["channel"], not long_form, credits,
-                             cfg["youtube"].get("contains_synthetic_media", True))
+                             cfg["youtube"].get("contains_synthetic_media", True), clips)
     issues = policy_check(script, topic, assets, store.history(), cfg.get("limits", {}).get("max_uploads_per_day", 4),
-                          cfg["curation"]["min_sources"])
+                          cfg["curation"]["min_sources"], clips, total, cfg.get("clips", {}).get("max_share", 0.4))
     meta = {"id": run_id, "status": "pending", "format": fmt_name, "title": script.title,
             "description": desc, "tags": script.tags, "topic": topic.title, "video": str(final),
             "thumbnail": str(thumb), "duration": round(total, 1), "video_id": None,
             "issues": [asdict(i) for i in issues],
+            "clips": [{"credit": c.credit, "note": c.note, "seconds": round(c.duration, 1),
+                       "language": c.language, "machine_translated": c.machine_translated,
+                       "transcript": c.transcript} for c in clips],
             "created": datetime.now(timezone.utc).isoformat()}
     store.save_meta(run_id, meta)
     if any(i.level == "block" for i in issues):

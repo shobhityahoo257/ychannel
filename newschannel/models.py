@@ -43,7 +43,8 @@ class Scene:
     headline: str             # Hindi, <= ~55 chars, shown on screen
     visual_query: str = ""    # generic English stock-photo query (never a person's name)
     label: str = ""           # small tag on the strap, e.g. "ताज़ा खबर", "विश्लेषण"
-    kind: str = "news"        # news | analysis | outro
+    kind: str = "news"        # news | analysis | outro | clip
+    clip_id: int | None = None  # for kind == "clip": index of the supplied video clip
 
 
 @dataclass
@@ -71,6 +72,8 @@ class SceneAudio:
     path: str
     duration: float
     words: list[Word]
+    lead: float = 0.25        # silence before / after (0 for original clip audio)
+    tail: float = 0.45
 
 
 @dataclass

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance
 
-from .render import Brand, font, wrap
+from .render import Brand, font, put, wrap
 
 
 def make_thumbnail(photo: str, headline: str, brand: Brand, out: Path) -> Path:
@@ -25,11 +25,11 @@ def make_thumbnail(photo: str, headline: str, brand: Brand, out: Path) -> Path:
     lines = wrap(headline, f, int(W * 0.62))[:3]
     y = H - 70 - len(lines) * 128
     for line in lines:
-        d.text((50, y), line, font=f, fill=(255, 255, 255), stroke_width=7, stroke_fill=(0, 0, 0))
+        put(d, (50, y), line, font=f, fill=(255, 255, 255), stroke_width=7, stroke_fill=(0, 0, 0))
         y += 128
     tag = font(brand.font_bold, 46)
     tw = int(tag.getlength("ताज़ा खबर")) + 50
     d.rectangle((0, 40, tw, 110), fill=brand.accent)
-    d.text((25, 75), "ताज़ा खबर", font=tag, fill=(255, 255, 255), anchor="lm")
+    put(d, (25, 75), "ताज़ा खबर", font=tag, fill=(255, 255, 255), anchor="lm")
     im.convert("RGB").save(out, quality=90)
     return out

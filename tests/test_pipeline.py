@@ -59,3 +59,56 @@ def test_long_video_has_intro_outro_and_ticker(cfg):
     v = next(s for s in probe(meta["video"])["streams"] if s["codec_type"] == "video")
     assert (v["width"], v["height"]) == (640, 360)
     assert meta["duration"] > 6   # includes 2s intro + 4s outro
+
+
+def make_clip(path, seconds=6, size="640x360"):
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25:duration={seconds}",
+                    "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}", "-shortest",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(path)], check=True)
+
+
+def clip_script():
+    sc = json.loads(json.dumps(SCRIPT))
+    sc["scenes"].insert(2, {"narration": "", "headline": "संसद में भाषण", "kind": "clip", "clip_id": 0})
+    return sc
+
+
+def run_with_clip(cfg, tmp, spec):
+    folder = tmp / "myclips"
+    folder.mkdir()
+    make_clip(folder / "speech.mp4")
+    (folder / "clips.txt").write_text(spec, encoding="utf-8")
+    client = FakeClient({"submit_script": clip_script(), "arrange_photos": arrange})
+    store = Store(Path(cfg["youtube"]["output_dir"]))
+    meta = produce(cfg, manual_topic("संसद में बहस", "संसद में आज बहस हुई।"), "short", client, MockTTS(), store,
+                   preset="ultrafast", log=lambda *_: None, clip_folders=[folder])
+    return meta, client
+
+
+def test_clip_is_trimmed_credited_and_audio_kept(cfg, tmp_path):
+    meta, client = run_with_clip(cfg, tmp_path, "speech.mp4: 00:01-00:05 | Sansad TV | लोकसभा में भाषण\n")
+    assert meta["clips"][0]["seconds"] == 4.0
+    assert not [i for i in meta["issues"] if i["level"] == "block"]
+    assert "Sansad TV" in meta["description"] and "वीडियो अंश" in meta["description"]
+    script_call = next(kw for n, kw in client.calls if n == "submit_script")
+    assert "clip_id=0" in script_call["messages"][0]["content"]
+    info = probe(meta["video"])
+    assert abs(float(info["format"]["duration"]) - meta["duration"]) < 0.5
+    run_dir = Path(meta["video"]).parent
+    plan = json.loads((run_dir / "plan.json").read_text())
+    assert 2 not in {s["scene"] for s in plan}          # clip scene gets no photos
+    # grab a frame from the middle of the clip scene for eyeballing
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", "8", "-i", meta["video"], "-frames:v", "1",
+                    str(run_dir / "clipframe.png")], check=True)
+
+
+def test_clip_without_credit_is_blocked(cfg, tmp_path):
+    meta, _ = run_with_clip(cfg, tmp_path, "speech.mp4: 00:00-00:05\n")
+    assert any(i["level"] == "block" and "no source credit" in i["msg"] for i in meta["issues"])
+
+
+def test_clip_length_is_capped(cfg, tmp_path):
+    cfg.data["clips"]["max_seconds"] = 3
+    meta, _ = run_with_clip(cfg, tmp_path, "speech.mp4: 00:00-00:06 | PIB | note\n")
+    assert meta["clips"][0]["seconds"] == 3.0
+    assert any("trimmed" in i["msg"] for i in meta["issues"])

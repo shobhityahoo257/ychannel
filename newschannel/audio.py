@@ -10,7 +10,7 @@ LEAD_IN, TAIL = 0.25, 0.45   # silence before / after each scene's narration
 
 
 def scene_durations(audios: list[SceneAudio]) -> list[float]:
-    return [LEAD_IN + a.duration + TAIL for a in audios]
+    return [a.lead + a.duration + a.tail for a in audios]
 
 
 def build_narration(audios: list[SceneAudio], durations: list[float], offset: float,
@@ -21,7 +21,7 @@ def build_narration(audios: list[SceneAudio], durations: list[float], offset: fl
         cmd += ["-i", a.path]
     parts, labels = [], []
     for i, (a, d) in enumerate(zip(audios, durations)):
-        ms = int(LEAD_IN * 1000)
+        ms = int(a.lead * 1000)
         parts.append(f"[{i}:a]aresample=44100,aformat=channel_layouts=mono,adelay={ms}:all=1,apad=whole_dur={d:.3f}[s{i}]")
         labels.append(f"[s{i}]")
     parts.append("".join(labels) + f"concat=n={len(audios)}:v=0:a=1,"

@@ -81,7 +81,7 @@ def cmd_make(cfg: Config, a) -> int:
     topic = manual_topic(a.headline, text)
     store = Store(cfg.path(cfg["youtube"]["output_dir"]))
     meta = produce(cfg, topic, a.format, _client(cfg), make_tts(cfg), store,
-                   [Path(p) for p in (a.images or [])])
+                   [Path(p) for p in (a.images or [])], clip_folders=[Path(p) for p in (a.clips or [])])
     _notify(store, meta, cfg)
     print(meta["video"], meta["status"])
     return 0
@@ -139,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--headline", required=True); m.add_argument("--text"); m.add_argument("--text-file")
     m.add_argument("--format", choices=["short", "long"], default="short")
     m.add_argument("--images", nargs="*", help="folders with your photos (AI picks and arranges them)")
+    m.add_argument("--clips", nargs="*", help="folders with speech/video clips + clips.txt (trim, credit, subtitles)")
     r = sub.add_parser("review")
     r.add_argument("action", choices=["list", "show", "approve", "reject", "listen"])
     r.add_argument("id", nargs="?"); r.add_argument("--force", action="store_true")

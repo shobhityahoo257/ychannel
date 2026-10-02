@@ -48,6 +48,9 @@ def heuristic_plan(scenes: list[Scene], assets: list[Asset]) -> list[list[Shot]]
     use_count = {a.id: 0 for a in assets}
     plan: list[list[Shot]] = []
     for i, sc in enumerate(scenes):
+        if sc.kind == "clip":
+            plan.append([])
+            continue
         want = _words(f"{sc.visual_query} {sc.headline}")
         ranked = sorted(assets, key=lambda a: (-len(want & _words(a.caption)),
                                                use_count[a.id], a.kind != "user"))
@@ -63,7 +66,8 @@ def heuristic_plan(scenes: list[Scene], assets: list[Asset]) -> list[list[Shot]]
 def llm_plan(client: Any, model: str, scenes: list[Scene], assets: list[Asset],
              max_per_scene: int) -> list[list[Shot]]:
     content: list[dict] = [{"type": "text", "text": "SCENES:\n" + "\n".join(
-        f"{i}. [{s.kind}] {s.headline} — {s.narration[:220]}" for i, s in enumerate(scenes))}]
+        f"{i}. [{s.kind}] {s.headline} — {s.narration[:220]}" if s.kind != "clip" else
+        f"{i}. [clip] original video plays here; do NOT assign photos" for i, s in enumerate(scenes))}]
     content.append({"type": "text", "text": "\nCANDIDATE PHOTOS:"})
     for a in assets:
         content.append({"type": "text", "text": f"\nasset_id={a.id} kind={a.kind} size={a.width}x{a.height} "
@@ -95,6 +99,9 @@ def repair(plan: list[list[Shot]], scenes: list[Scene], assets: list[Asset]) -> 
         for s in shots:
             used[s.asset_id] += 1
     for i, shots in enumerate(plan):
+        if scenes[i].kind == "clip":
+            shots.clear()
+            continue
         if not shots:
             a = min(assets, key=lambda a: (used[a.id], a.kind != "user"))
             used[a.id] += 1
@@ -120,6 +127,8 @@ def time_shots(plan: list[list[Shot]], starts: list[float], durations: list[floa
     flat: list[Shot] = []
     for i, shots in enumerate(plan):
         n = len(shots)
+        if n == 0:
+            continue
         while n > 1 and durations[i] / n < MIN_SHOT:
             n -= 1
         shots = shots[:n]
