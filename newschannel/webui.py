@@ -129,11 +129,11 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                  "help": "Terminal: brew install ffmpeg"},
                 {"name": "Hindi text engine (raqm)", "ok": features.check("raqm"),
                  "help": "Terminal: brew install libraqm"},
-                {"name": "AI key (OpenAI या Anthropic)", "ok": has("OPENAI_API_KEY") or has("ANTHROPIC_API_KEY"),
-                 "help": "सेटिंग टैब में OpenAI key डालिए"},
-                {"name": "Voice key (OpenAI या ElevenLabs)",
+                {"name": "AI key (OpenAI or Anthropic)", "ok": has("OPENAI_API_KEY") or has("ANTHROPIC_API_KEY"),
+                 "help": "Add your OpenAI key in the Settings tab"},
+                {"name": "Voice key (OpenAI or ElevenLabs)",
                  "ok": has("OPENAI_API_KEY") or (has("ELEVENLABS_API_KEY") and has("ELEVENLABS_VOICE_ID")),
-                 "help": "OpenAI key voice भी बना देती है"},
+                 "help": "An OpenAI key also covers the voice"},
             ]})
 
     @app.post("/api/keys")
@@ -191,7 +191,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
     @app.post("/api/create")
     def create():
         if run_lock.locked():
-            return jsonify({"error": "एक वीडियो अभी बन रहा है, उसके पूरा होने का इंतज़ार कीजिए।"}), 409
+            return jsonify({"error": "A video is already being made. Please wait until it finishes."}), 409
         f = request.form
         fmt = f.get("format", "short")
         demo = f.get("demo") == "1"
@@ -200,10 +200,10 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         if f.get("topic_id"):
             topic = topics.get(f["topic_id"])
             if topic is None:
-                return jsonify({"error": "यह खबर पुरानी हो गई, फिर से 'आज की खबरें' दबाइए।"}), 400
+                return jsonify({"error": "This topic list has expired. Click \"Get today's news\" again."}), 400
         else:
             if not demo and not f.get("headline", "").strip():
-                return jsonify({"error": "हेडलाइन ज़रूरी है।"}), 400
+                return jsonify({"error": "A headline is required."}), 400
             topic = manual_topic(f.get("headline", "डेमो").strip(), f.get("text", "").strip())
         job = Job(topic.title)
         work = ROOT / "uploads" / job.id
@@ -283,10 +283,10 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         c, s = cfg(), store()
         m = s.meta(rid)
         if m["status"] != "approved":
-            return jsonify({"error": "पहले वीडियो Approve कीजिए।"}), 400
+            return jsonify({"error": "Approve the video first."}), 400
         secret = Config.env("YOUTUBE_CLIENT_SECRETS")
         if not secret or not c.path(secret).exists():
-            return jsonify({"error": "YouTube अभी जुड़ा नहीं है। अभी के लिए video.mp4 डाउनलोड करके YouTube Studio में अपलोड कीजिए।"}), 400
+            return jsonify({"error": "YouTube is not connected yet. For now, download the video and upload it in YouTube Studio."}), 400
         try:
             from .youtube import upload
             vid = upload(Path(m["video"]), Path(m["thumbnail"]), m, c["youtube"], m["format"] == "short",
@@ -303,7 +303,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
 def serve(port: int = 8765, open_browser: bool = True, config_path: str | None = None) -> None:
     app = create_app(config_path)
     url = f"http://127.0.0.1:{port}"
-    print(f"\n  न्यूज़ चैनल स्टूडियो चालू है: {url}\n  (बंद करने के लिए Ctrl+C)\n")
+    print(f"\n  News Channel Studio is running: {url}\n  (press Ctrl+C to stop)\n")
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     app.run(host="127.0.0.1", port=port, threaded=True, debug=False)

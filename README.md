@@ -20,9 +20,9 @@ Pick an OpenAI voice with `OPENAI_VOICE` (try `onyx`, `ash`, `nova`) and change 
 ```bash
 python -m newschannel ui        # opens http://127.0.0.1:8765 in your browser
 ```
-Three tabs: **वीडियो बनाओ** (type a story or pick today's news, drag in photos/clips, one button),
-**मेरे वीडियो** (watch, Approve/Reject, download, upload), **सेटिंग** (paste API keys — saved to `.env`, never shown again).
-It only listens on your own computer. First time? Click "डेमो वीडियो" to test without any key.
+Three tabs: **Create video** (type a story or pick today's news, drag in photos/clips, one button),
+**My videos** (watch, Approve/Reject, download, upload), **Settings** (paste API keys — saved to `.env`, never shown again).
+It only listens on your own computer. First time? Click "demo video" to test without any key.
 
 ## Setup
 ```bash

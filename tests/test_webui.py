@@ -56,7 +56,7 @@ def wait(c, job, timeout=120):
 def test_page_and_status(client):
     c, _ = client
     r = c.get("/")
-    assert r.status_code == 200 and "वीडियो बनाओ" in r.get_data(as_text=True)
+    assert r.status_code == 200 and "Create video" in r.get_data(as_text=True)
     s = c.get("/api/status").get_json()
     assert {x["name"] for x in s["checks"]} >= {"ffmpeg"} and "OPENAI_API_KEY" in s["keys"]
 
