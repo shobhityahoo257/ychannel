@@ -93,3 +93,21 @@ def channel_stats() -> dict[str, Any]:
     except Exception as exc:
         print(f"[youtube] analytics unavailable: {exc}")
     return stats
+
+
+def fetch_video_stats(ids: list[str], days: int = 365) -> dict[str, dict[str, Any]]:
+    """Per-video views, retention and engagement from the YouTube Analytics API."""
+    an = service("youtubeAnalytics", "v2")
+    start, end = window(days)
+    out: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(ids), 200):
+        chunk = ids[i:i + 200]
+        res = an.reports().query(
+            ids="channel==MINE", startDate=start, endDate=end, dimensions="video",
+            filters="video==" + ",".join(chunk), maxResults=200,
+            metrics="views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,"
+                    "subscribersGained,likes,comments,shares").execute()
+        for r in res.get("rows") or []:
+            out[r[0]] = {"views": r[1], "minutes": r[2], "avg_sec": r[3], "avg_pct": r[4],
+                         "subs": r[5], "likes": r[6], "comments": r[7], "shares": r[8]}
+    return out

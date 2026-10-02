@@ -33,3 +33,14 @@ def make_thumbnail(photo: str, headline: str, brand: Brand, out: Path) -> Path:
     put(d, (25, 75), "ताज़ा खबर", font=tag, fill=(255, 255, 255), anchor="lm")
     im.convert("RGB").save(out, quality=90)
     return out
+
+
+def make_variants(photos: list[str], texts: list[str], brand: Brand, folder: Path, default_text: str) -> list[dict]:
+    """Up to 3 thumbnails, each with a different photo and text, so you can pick (or A/B test)."""
+    texts = texts or [default_text]
+    out = []
+    for i, text in enumerate(texts[:3]):
+        photo = photos[i % len(photos)]
+        path = make_thumbnail(photo, text, brand, folder / f"thumbnail_{i + 1}.jpg")
+        out.append({"file": str(path), "text": text})
+    return out

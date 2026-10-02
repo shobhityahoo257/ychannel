@@ -54,6 +54,17 @@ normalises loudness, keeps the original audio, transcribes the speech (ElevenLab
 in the description. The script writer introduces the clip and analyses it afterwards; clips may be at most 40% of the video,
 and a clip without a credit blocks publishing.
 
+## Growth features
+* **Hook / title / thumbnail packaging** — for every video the AI proposes 5 opening hooks, 5 titles and 3 thumbnail texts, scores them,
+  and uses the best ones that pass fact-safety checks (no invented numbers). All options are kept: pick another title or
+  thumbnail in **My videos → Title & thumbnail options** before uploading.
+* **Analytics loop** — `python -m newschannel insights --sync` (or the "Sync from YouTube" button) downloads views and
+  retention per video. After 4+ videos with data, the hooks that kept people watching (and the ones that didn't) are fed
+  into the next scripts automatically.
+* **Unattended mode** — `python -m newschannel schedule` produces videos at `schedule.produce_at`, collects your
+  Approve/Reject taps from Telegram, and publishes one approved video at each `schedule.publish_slots` time
+  (max `limits.max_uploads_per_day`). Videos blocked by the policy checks are never auto-published. Keep the computer awake.
+
 ## Commands
 | Command | What it does |
 |---|---|
@@ -61,6 +72,9 @@ and a clip without a credit blocks publishing.
 | `make --headline "…" --text "…" --images ./myphotos --format short` | one video from your own story and photos |
 | `review list / show ID / approve ID / reject ID` | approval queue (`review listen` handles Telegram buttons) |
 | `publish [--publish-at 2026-10-03T07:30:00Z]` | upload approved videos |
+| `insights [--sync]` | what worked on your channel; lessons feed the next scripts |
+| `schedule` | run unattended: produce, collect approvals, publish at set times |
+| `ui` | the point-and-click web app |
 | `stats` | subscribers, watch hours, Shorts views vs. YouTube Partner Programme thresholds |
 
 Cron examples: `deploy/crontab.example`. Docker: `deploy/Dockerfile`.

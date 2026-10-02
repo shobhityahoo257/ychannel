@@ -146,6 +146,10 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
 <!-- ================= VIDEOS ================= -->
 <section id="tab-videos" class="hide">
   <div class="row" style="margin-bottom:12px"><button class="btn" id="reload">🔄 Refresh</button><span class="hint" style="margin:0">Watch each video and approve it if it looks right. Nothing is uploaded without your approval.</span></div>
+  <div class="card" id="insightCard">
+    <div class="row"><b>📈 What's working</b><button class="btn" id="syncIns" style="margin-left:auto">Sync from YouTube</button></div>
+    <div id="insightBody" class="hint" style="margin:8px 0 0">Loading...</div>
+  </div>
   <div id="videoList"></div>
 </section>
 
@@ -270,6 +274,7 @@ $('#go').onclick=()=>startJob(false);
 // ---- my videos
 const ST={pending:['Waiting for your review','warn'],approved:['Approved ✓','ok'],rejected:['Rejected','bad'],published:['On YouTube ✓','ok']};
 async function loadVideos(){
+  loadInsights();
   const {videos}=await api('/api/videos');
   $('#videoList').innerHTML=videos.length?'':'<div class="card hint">No videos yet. Create one in the "Create video" tab.</div>';
   videos.forEach(v=>{ const [stT,stC]=ST[v.status]||[v.status,'']; const d=document.createElement('div'); d.className='card';
@@ -283,9 +288,27 @@ async function loadVideos(){
         ${v.status==='approved'?`<button class="btn primary" data-a="publish">📤 Upload to YouTube</button>`:''}
         <a class="btn" href="${v.video_url}" download="${esc(v.id)}.mp4">⬇️ Download</a>
         <button class="btn" data-a="copy">📋 Copy description</button></div>
+      ${(v.title_options&&v.title_options.length)||(v.thumb_variants&&v.thumb_variants.length)?`<details open><summary>Title &amp; thumbnail options</summary>
+        <div class="hint" style="margin:8px 0 4px">Pick a title (or edit it), and a thumbnail. Applied before you upload.</div>
+        ${(v.title_options||[]).map(t=>`<label class="topic" style="margin-top:4px;padding:6px 10px"><input type="radio" name="t_${v.id}" value="${esc(t)}" ${t===v.title?'checked':''}><span>${esc(t)}</span></label>`).join('')}
+        <input type="text" data-custom="${v.id}" style="margin-top:6px" placeholder="...or type your own title" ${v.status==='published'?'disabled':''}>
+        <div class="thumbs" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${(v.thumb_variants||[]).map((t,i)=>`<div data-thumb="${i}" style="aspect-ratio:16/9;cursor:pointer;outline:${(v.thumb_choice||0)===i?'3px solid var(--brand)':'1px solid var(--line)'}"><img src="${t.url}?t=${Date.now()}" title="${esc(t.text)}"></div>`).join('')}</div>
+        ${v.status==='published'?'':`<div class="row" style="margin-top:8px"><button class="btn" data-a="package">Apply choices</button></div>`}</details>`:''}
       <details><summary>Show description</summary><pre class="log">${esc(v.description)}</pre></details></div></div>`;
-    d.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>videoAction(v,b.dataset.a)); $('#videoList').append(d)});
+    let thumbPick=null; d.querySelectorAll('[data-thumb]').forEach(el=>el.onclick=()=>{thumbPick=+el.dataset.thumb; d.querySelectorAll('[data-thumb]').forEach(x=>x.style.outline=x===el?'3px solid var(--brand)':'1px solid var(--line)')});
+    d.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>b.dataset.a==='package'?applyPackage(v,d,thumbPick):videoAction(v,b.dataset.a)); $('#videoList').append(d)});
 }
+async function applyPackage(v,d,thumbPick){
+  const custom=d.querySelector('[data-custom]').value.trim(); const picked=d.querySelector(`input[name="t_${v.id}"]:checked`);
+  const body={}; const title=custom||(picked&&picked.value); if(title&&title!==v.title) body.title=title; if(thumbPick!==null) body.thumbnail=thumbPick;
+  if(!Object.keys(body).length) return toast('Nothing changed');
+  try{ await api(`/api/videos/${v.id}/package`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); toast('✅ Saved'); loadVideos() }catch(e){ toast('❌ '+e.message) }
+}
+async function loadInsights(){
+  try{ const i=await api('/api/insights'); const f=Object.entries(i.by_format).map(([k,d])=>`${k==='short'?'Shorts':'Long'}: ${d.avg_retention_pct}% average watched, ${d.avg_views} average views (${d.videos} videos)`).join(' · ');
+    $('#insightBody').innerHTML = i.ready ? `${esc(f)}<pre class="log">${esc(i.advice||'')}</pre><span>These lessons are fed into the next scripts automatically.</span>`
+      : `Not enough data yet (${i.rated} of ${i.total} published videos have 30+ views; need 4). Publish more videos, then click "Sync from YouTube".` }catch(e){ $('#insightBody').textContent='' } }
+$('#syncIns').onclick=async()=>{ try{ const r=await api('/api/insights/sync',{method:'POST'}); toast(`Synced ${r.videos} videos`); loadInsights() }catch(e){ toast('❌ '+e.message) } };
 async function videoAction(v,a){
   try{
     if(a==='copy'){ await navigator.clipboard.writeText(v.description); return toast('Description copied') }

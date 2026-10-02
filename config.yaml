@@ -58,6 +58,11 @@ clips:                         # original speech/video clips that YOU supply (ne
 limits:
   max_uploads_per_day: 4
 
+schedule:                      # used by `python -m newschannel schedule`
+  timezone: "Asia/Kolkata"
+  produce_at: "05:30"          # make the day's videos, then ask you to approve them (Telegram)
+  publish_slots: ["07:30", "12:30", "18:30"]   # one approved video goes out at each time
+
 audio:
   music_dir: "assets/music"    # put royalty-free .mp3/.wav here (optional)
   music_volume: 0.10

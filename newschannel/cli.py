@@ -9,6 +9,7 @@ from . import sources
 from .config import Config
 from .llm import make_client
 from .monetization import ypp_progress
+from .daily import notify
 from .pipeline import manual_topic, produce
 from .review import Store, Telegram
 from .tts import make_tts
@@ -64,32 +65,10 @@ def cmd_fetch(cfg: Config, a) -> int:
     return 0
 
 
-def _notify(store: Store, meta: dict, cfg: Config) -> None:
-    tg = Telegram()
-    if cfg["review"].get("telegram") and tg.enabled:
-        tg.send_for_review(meta, Path(meta["video"]))
-
-
 def cmd_daily(cfg: Config, a) -> int:
-    client, tts = _client(cfg), make_tts(cfg)
-    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
-    stories = sources.fetch_stories(cfg["feeds"], cfg["curation"]["max_age_hours"])
-    topics = C.curate(client, cfg.models()[0], stories, cfg["curation"]["min_sources"],
-                      [h["topic"] for h in store.history()], cfg["curation"]["candidates_for_llm"])
-    plan = ["short"] * cfg["daily"]["shorts"] + ["long"] * cfg["daily"]["long"]
-    if not topics:
-        print("No sufficiently corroborated stories right now.")
-        return 0
-    for i, fmt in enumerate(plan):
-        topic = topics[i % len(topics)] if fmt == "short" else topics[0]
-        print(f"\n=== {fmt}: {topic.title}")
-        try:
-            meta = produce(cfg, topic, fmt, client, tts, store)
-        except Exception as exc:   # one failure must not kill the rest of the day's batch
-            print(f"FAILED: {exc}")
-            continue
-        _notify(store, meta, cfg)
-        print(f"-> {meta['video']}  [{meta['status']}]")
+    from .daily import run_daily
+    for m in run_daily(cfg):
+        print(f"-> {m['video']}  [{m['status']}]")
     return 0
 
 
@@ -99,7 +78,7 @@ def cmd_make(cfg: Config, a) -> int:
     store = Store(cfg.path(cfg["youtube"]["output_dir"]))
     meta = produce(cfg, topic, a.format, _client(cfg), make_tts(cfg), store,
                    [Path(p) for p in (a.images or [])], clip_folders=[Path(p) for p in (a.clips or [])])
-    _notify(store, meta, cfg)
+    notify(cfg, meta)
     print(meta["video"], meta["status"])
     return 0
 
@@ -125,15 +104,31 @@ def cmd_review(cfg: Config, a) -> int:
 
 
 def cmd_publish(cfg: Config, a) -> int:
-    from .youtube import upload
+    from .daily import publish_one
     store = Store(cfg.path(cfg["youtube"]["output_dir"]))
     for m in store.runs("approved"):
         if m.get("video_id"):
             continue
-        vid = upload(Path(m["video"]), Path(m["thumbnail"]), m, cfg["youtube"], m["format"] == "short", a.publish_at)
-        store.set_status(m["id"], "published", video_id=vid)
-        store.add_history(m["title"], m["topic"], vid)
-        print(f"published https://youtu.be/{vid}")
+        print(f"published https://youtu.be/{publish_one(cfg, store, m, a.publish_at)}")
+    return 0
+
+
+def cmd_insights(cfg: Config, a) -> int:
+    from . import learn
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    if a.sync:
+        print(f"synced stats for {learn.sync(store)} videos")
+    ins = learn.insights(store)
+    print(f"Videos with enough data: {ins['rated']} of {ins['total']} (need {learn.MIN_VIDEOS}+ for advice)")
+    for fmt, d in ins["by_format"].items():
+        print(f"  {fmt}: avg retention {d['avg_retention_pct']}%, avg views {d['avg_views']} ({d['videos']} videos)")
+    print(learn.prompt_hint(store) or "No advice yet - publish more videos and run again with --sync.")
+    return 0
+
+
+def cmd_schedule(cfg: Config, a) -> int:
+    from .scheduler import run_forever
+    run_forever(cfg)
     return 0
 
 
@@ -167,10 +162,13 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--seconds", type=int, default=600)
     p = sub.add_parser("publish"); p.add_argument("--publish-at", help="RFC3339, e.g. 2026-10-03T07:30:00Z")
     sub.add_parser("stats")
+    ins = sub.add_parser("insights", help="what worked on your channel (add --sync to refresh from YouTube)")
+    ins.add_argument("--sync", action="store_true")
+    sub.add_parser("schedule", help="run unattended: produce, collect approvals and publish at set times")
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
     return {"ui": cmd_ui, "doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
-            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats}[a.cmd](cfg, a)
+            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule}[a.cmd](cfg, a)
 
 
 if __name__ == "__main__":

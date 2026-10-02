@@ -54,10 +54,11 @@ class Store:
         except (OSError, ValueError):
             return []
 
-    def add_history(self, title: str, topic: str, video_id: str) -> None:
+    def add_history(self, title: str, topic: str, video_id: str, **extra: Any) -> None:
         h = self.history()
-        h.append({"title": title, "topic": topic, "video_id": video_id,
-                  "date": datetime.now(timezone.utc).date().isoformat()})
+        now = datetime.now(timezone.utc)
+        h.append({"title": title, "topic": topic, "video_id": video_id, "date": now.date().isoformat(),
+                  "published_at": now.isoformat(), **extra})
         self.history_path.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -90,20 +91,28 @@ class Telegram:
                                          "reply_markup": json.dumps(kb), "supports_streaming": "true"},
                       files={"video": f})
 
+    _offset: int | None = None
+
+    def poll_once(self, store: Store, wait: int = 0) -> int:
+        """Handle pending Approve/Reject button presses. Returns how many were applied."""
+        params: dict[str, Any] = {"timeout": wait, "allowed_updates": json.dumps(["callback_query"])}
+        if self._offset:
+            params["offset"] = self._offset
+        applied = 0
+        for u in self._api("getUpdates", data=params):
+            self._offset = u["update_id"] + 1
+            cq = u.get("callback_query")
+            if not cq or str(cq["message"]["chat"]["id"]) != str(self.chat):
+                continue   # ignore anyone but the owner's chat
+            action, run_id = cq["data"].split(":", 1)
+            if action in ("approve", "reject"):
+                store.set_status(run_id, "approved" if action == "approve" else "rejected")
+                self._api("answerCallbackQuery", data={"callback_query_id": cq["id"], "text": action})
+                applied += 1
+        return applied
+
     def listen(self, store: Store, seconds: int = 600) -> None:
         """Long-poll for button presses and update run statuses."""
-        offset = None
         end = time.time() + seconds
         while time.time() < end:
-            params: dict[str, Any] = {"timeout": 30, "allowed_updates": json.dumps(["callback_query"])}
-            if offset:
-                params["offset"] = offset
-            for u in self._api("getUpdates", data=params):
-                offset = u["update_id"] + 1
-                cq = u.get("callback_query")
-                if not cq or str(cq["message"]["chat"]["id"]) != str(self.chat):
-                    continue   # ignore anyone but the owner's chat
-                action, run_id = cq["data"].split(":", 1)
-                if action in ("approve", "reject"):
-                    store.set_status(run_id, "approved" if action == "approve" else "rejected")
-                    self._api("answerCallbackQuery", data={"callback_query_id": cq["id"], "text": action})
+            self.poll_once(store, 30)

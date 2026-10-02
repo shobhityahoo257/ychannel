@@ -245,13 +245,17 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         out = []
         for m in reversed(store().runs()):
             out.append({k: m.get(k) for k in ("id", "title", "status", "format", "duration", "issues", "clips",
-                                               "description", "video_id", "created")}
-                       | {"video_url": f"/files/{m['id']}/video.mp4", "thumb_url": f"/files/{m['id']}/thumbnail.jpg"})
+                                               "description", "video_id", "created", "title_options", "hook",
+                                               "hook_options", "thumb_choice")}
+                       | {"video_url": f"/files/{m['id']}/video.mp4", "thumb_url": f"/files/{m['id']}/thumbnail.jpg",
+                          "thumb_variants": [{"url": f"/files/{m['id']}/{Path(t['file']).name}", "text": t["text"]}
+                                             for t in m.get("thumbnails", [])]})
         return jsonify({"videos": out})
 
     @app.get("/files/<run_id>/<name>")
     def files(run_id: str, name: str):
-        if name not in ("video.mp4", "thumbnail.jpg") or "/" in run_id or ".." in run_id:
+        ok_names = {"video.mp4", "thumbnail.jpg", "thumbnail_1.jpg", "thumbnail_2.jpg", "thumbnail_3.jpg"}
+        if name not in ok_names or "/" in run_id or ".." in run_id:
             abort(404)
         p = store().root / run_id / name
         if not p.exists():
@@ -278,6 +282,52 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             abort(400)
         return jsonify({"ok": True})
 
+    @app.post("/api/videos/<rid>/package")
+    def package(rid: str):
+        """Pick the title and/or thumbnail variant used when this video is uploaded."""
+        body = request.get_json(force=True) or {}
+        s = store()
+        try:
+            m = s.meta(rid)
+        except OSError:
+            abort(404)
+        if m["status"] == "published":
+            return jsonify({"error": "Already published."}), 400
+        title = (body.get("title") or "").strip()
+        if title:
+            if len(title) > 100:
+                return jsonify({"error": "YouTube titles can be at most 100 characters."}), 400
+            m["title"] = title
+        if body.get("thumbnail") is not None:
+            i = int(body["thumbnail"])
+            variants = m.get("thumbnails", [])
+            if not 0 <= i < len(variants):
+                return jsonify({"error": "No such thumbnail."}), 400
+            shutil.copyfile(variants[i]["file"], m["thumbnail"])
+            m["thumb_choice"] = i
+        s.save_meta(rid, m)
+        return jsonify({"ok": True, "title": m["title"]})
+
+    @app.get("/api/insights")
+    def get_insights():
+        from . import learn
+        ins = learn.insights(store())
+        ins["advice"] = learn.prompt_hint(store())
+        return jsonify(ins)
+
+    @app.post("/api/insights/sync")
+    def sync_insights():
+        from . import learn
+        c = cfg()
+        secret = Config.env("YOUTUBE_CLIENT_SECRETS")
+        if not secret or not c.path(secret).exists():
+            return jsonify({"error": "Connect YouTube first (see the README) to download your stats."}), 400
+        try:
+            n = learn.sync(store())
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"ok": True, "videos": n})
+
     @app.post("/api/videos/<rid>/publish")
     def publish(rid: str):
         c, s = cfg(), store()
@@ -288,13 +338,10 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         if not secret or not c.path(secret).exists():
             return jsonify({"error": "YouTube is not connected yet. For now, download the video and upload it in YouTube Studio."}), 400
         try:
-            from .youtube import upload
-            vid = upload(Path(m["video"]), Path(m["thumbnail"]), m, c["youtube"], m["format"] == "short",
-                         (request.get_json(silent=True) or {}).get("publish_at"))
+            from .daily import publish_one
+            vid = publish_one(c, s, m, (request.get_json(silent=True) or {}).get("publish_at"))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
-        s.set_status(rid, "published", video_id=vid)
-        s.add_history(m["title"], m["topic"], vid)
         return jsonify({"ok": True, "url": f"https://youtu.be/{vid}"})
 
     return app

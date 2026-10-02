@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -10,13 +11,15 @@ from typing import Any, Callable
 
 from . import audio as A
 from . import clips as clipmod
+from . import learn
 from . import media, planner, render
 from .config import Config
 from .models import Asset, SceneAudio, Script, Story, Topic, save_json, script_from_dict
 from .monetization import policy_check
 from .review import Store
 from .scriptwriter import build_description, fix_clip_scenes, write_script
-from .thumbnail import make_thumbnail
+from .packaging import Packaging, improve
+from .thumbnail import make_thumbnail, make_variants
 from .tts import probe_duration
 
 INTRO_SECONDS, OUTRO_SECONDS = 2.0, 4.0
@@ -91,14 +94,19 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     if clips:
         log(f"clips: {len(clips)} ({sum(c.duration for c in clips):.0f}s of original footage)")
 
+    insights = learn.prompt_hint(store)
+
     # 1. script (cached so a failed render does not re-bill the LLM)
     sp = run / "script.json"
     if sp.exists():
         script = script_from_dict(json.loads(sp.read_text(encoding="utf-8")))
     else:
         log("writing script…")
-        script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips)
+        script = write_script(client, model, topic, fmt, cfg["channel"]["name"], clips, insights)
         fix_clip_scenes(script, clips)
+        log("polishing hook, title and thumbnail text…")
+        pk = improve(client, model, script, topic, insights)
+        save_json(run / "packaging.json", pk)
         save_json(sp, script)
 
     # 2. narration
@@ -169,8 +177,13 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     final = A.mux(silent, nar, run / "video.mp4", total, music, cfg["audio"]["music_volume"],
                   cfg["audio"]["target_lufs"])
     silent.unlink(missing_ok=True)
-    first = by_id[shots[0].asset_id].path
-    thumb = make_thumbnail(first, script.scenes[0].headline, brand, run / "thumbnail.jpg")
+    pkp = run / "packaging.json"
+    pk = Packaging(**json.loads(pkp.read_text(encoding="utf-8"))) if pkp.exists() else Packaging()
+    photo_paths = list(dict.fromkeys(by_id[s.asset_id].path for s in shots if by_id[s.asset_id].kind != "graphic")) \
+        or [by_id[shots[0].asset_id].path]
+    variants = make_variants(photo_paths, pk.thumb_texts, brand, run, script.scenes[0].headline)
+    thumb = run / "thumbnail.jpg"
+    shutil.copyfile(variants[0]["file"], thumb)
 
     # 6. description, policy gate, meta
     credits = sorted({a.credit for a in assets if a.credit})
@@ -180,7 +193,9 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                           cfg["curation"]["min_sources"], clips, total, cfg.get("clips", {}).get("max_share", 0.4))
     meta = {"id": run_id, "status": "pending", "format": fmt_name, "title": script.title,
             "description": desc, "tags": script.tags, "topic": topic.title, "video": str(final),
-            "thumbnail": str(thumb), "duration": round(total, 1), "video_id": None,
+            "thumbnail": str(thumb), "thumbnails": variants,
+            "title_options": [t["text"] for t in pk.titles], "hook": script.scenes[0].narration,
+            "hook_options": [h["text"] for h in pk.hooks], "duration": round(total, 1), "video_id": None,
             "issues": [asdict(i) for i in issues],
             "clips": [{"credit": c.credit, "note": c.note, "seconds": round(c.duration, 1),
                        "language": c.language, "machine_translated": c.machine_translated,

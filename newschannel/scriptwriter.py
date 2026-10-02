@@ -94,13 +94,14 @@ def _clip_pack(clips: list) -> str:
 
 
 def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: str,
-                 clips: list | None = None) -> Script:
+                 clips: list | None = None, insights: str = "") -> Script:
     clips = clips or []
     lo, hi = budget(fmt, sum(c.duration for c in clips))
     kind = "YouTube Short (vertical, fast, ~%ds)" % fmt.target_seconds if fmt.portrait \
         else "long-form news video (~%d minutes)" % round(fmt.target_seconds / 60)
     base = (f"चैनल: {channel}\nफ़ॉर्मैट: {kind}\nकुल बोली जाने वाली लंबाई: {lo}–{hi} शब्द, "
-            f"अधिकतम {fmt.max_scenes} दृश्य।\nविषय: {topic.title}\n\nस्रोत:\n{_source_pack(topic)}{_clip_pack(clips)}")
+            f"अधिकतम {fmt.max_scenes} दृश्य।\nविषय: {topic.title}\n\nस्रोत:\n{_source_pack(topic)}{_clip_pack(clips)}"
+            + (f"\n\nइस चैनल के एनालिटिक्स से सीख (सिर्फ़ शैली/hook के लिए, तथ्यों के लिए नहीं):\n{insights}" if insights else ""))
     feedback = ""
     script = None
     for _ in range(2):

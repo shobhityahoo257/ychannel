@@ -126,3 +126,31 @@ def test_clip_without_credit_blocks_approval_until_forced(client, tmp_path, monk
     r = c.post(f"/api/videos/{rid}/status", json={"action": "approve"})
     assert r.status_code == 409 and "no source credit" in r.get_json()["issues"][0]["msg"]
     assert c.post(f"/api/videos/{rid}/status", json={"action": "approve", "force": True}).status_code == 200
+
+
+def test_choose_title_and_thumbnail_variant(client, monkeypatch):
+    c, tmp = client
+    sc = json.loads(json.dumps(SCRIPT))
+    monkeypatch.setattr(webui, "make_client", lambda cfg, required=True: FakeClient({
+        "submit_script": sc, "arrange_photos": lambda kw: {"scenes": []},
+        "submit_packaging": {"hooks": [], "titles": [{"text": "विकल्प एक शीर्षक", "score": 8}, {"text": "विकल्प दो शीर्षक", "score": 7}],
+                             "thumb_texts": ["एक", "दो", "तीन"]}}))
+    data = {"headline": "बहस", "text": "तथ्य", "format": "short", "images": [(jpeg(1), "a.jpg"), (jpeg(2), "b.jpg")]}
+    j = wait(c, c.post("/api/create", data=data, content_type="multipart/form-data").get_json()["job"])
+    assert j["status"] == "done", j["error"]
+    v = c.get("/api/videos").get_json()["videos"][0]
+    assert v["title"] == "विकल्प एक शीर्षक" and len(v["thumb_variants"]) == 3
+    assert c.get(v["thumb_variants"][2]["url"]).status_code == 200
+    r = c.post(f"/api/videos/{v['id']}/package", json={"title": "विकल्प दो शीर्षक", "thumbnail": 2})
+    assert r.status_code == 200
+    v2 = c.get("/api/videos").get_json()["videos"][0]
+    assert v2["title"] == "विकल्प दो शीर्षक" and v2["thumb_choice"] == 2
+    assert c.post(f"/api/videos/{v['id']}/package", json={"title": "x" * 101}).status_code == 400
+    assert c.post(f"/api/videos/{v['id']}/package", json={"thumbnail": 9}).status_code == 400
+
+
+def test_insights_endpoint_and_sync_requires_youtube(client):
+    c, _ = client
+    assert c.get("/api/insights").get_json()["ready"] is False
+    r = c.post("/api/insights/sync")
+    assert r.status_code == 400 and "YouTube" in r.get_json()["error"]
