@@ -101,7 +101,7 @@ def _clip_pack(clips: list) -> str:
 
 def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: str,
                  clips: list | None = None, insights: str = "", urgent: bool = False,
-                 lang: str = "hinglish") -> Script:
+                 lang: str = "hinglish", instruction: str = "", previous: Script | None = None) -> Script:
     clips = clips or []
     lo, hi = budget(fmt, sum(c.duration for c in clips))
     kind = f"YouTube Short (vertical, fast, ~{fmt.target_seconds}s)" if fmt.portrait \
@@ -111,6 +111,10 @@ def write_script(client: Any, model: str, topic: Topic, fmt: Format, channel: st
             + ("\n\nThis is BREAKING news: say the latest event in the very first line, only firm facts, with caution "
                "like 'details are still coming in', and no speculation." if urgent else "")
             + (f"\n\nLessons from this channel's analytics (for style/hook only, never for facts):\n{insights}" if insights else ""))
+    if instruction and previous is not None:
+        draft = "\n".join(f"[{i}] ({sc.kind}) {sc.headline} :: {sc.narration}" for i, sc in enumerate(previous.scenes))
+        base += (f"\n\nCURRENT DRAFT (revise it; keep clip scenes and facts correct):\nTitle: {previous.title}\n{draft}"
+                 f"\n\nEDITOR'S INSTRUCTION - apply it to the draft and return the complete revised script: {instruction}")
     feedback = ""
     script = None
     for _ in range(2):

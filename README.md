@@ -88,6 +88,20 @@ normalises loudness, keeps the original audio, transcribes the speech (ElevenLab
 in the description. The script writer introduces the clip and analyses it afterwards; clips may be at most 40% of the video,
 and a clip without a credit blocks publishing.
 
+## Step-by-step approval (script -> photos -> video)
+When you create a video in the web app, choose **how it runs**:
+* **✋ Ask me at each step** (default): the run stops after each stage and waits for you.
+* **⚡ Fully automatic**: no stops (you still approve the finished video before anything is uploaded).
+* **⚙️ Choose which steps**: pause only after the script, only after photos & media, or both.
+Paused videos wait in the **Review steps** tab and resume exactly where you left off, even after closing the page.
+1. **Script** - read it, edit any headline / narration (for deep analysis, every beat, with its claim chips), ask the AI to revise
+   ("make it shorter", "sharpen the analysis"), then approve. Deep-analysis edits are fact-checked again on every save: an invented number,
+   an unattributed claim or a banned phrase blocks approval; the target length is only a warning because you decide how long it is.
+2. **Photos & media** - see the photos the AI chose for each scene; remove, add (upload, library, or the free-photo finder), reorder, change the
+   camera move, re-arrange with AI, pick the music. Nothing is spent on the voice before you approve this step and the script.
+3. **Video** - voice-over and render, then review the finished video in My videos as before. A failed render returns you to the photos step with
+   your work intact; "Approve & run the rest automatically" is available at the script step. Defaults: `workflow.default` in `config.yaml`.
+
 ## Deep-analysis videos (researched, fact-bound, 6-15 minutes)
 Open the **Deep analysis** tab (or `python -m newschannel deep --headline "..." --url <link> --url <link>`).
 1. **Research & fact-check** - give a topic and source links (PIB, ministries, courts, major outlets) or pick a story from today's news.

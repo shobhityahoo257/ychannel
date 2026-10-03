@@ -176,3 +176,18 @@ def load(cfg: Config, folders: list[Path], run: Path, client: Any, fps: int) -> 
         prepare(clip, run / "clips", i, fps)
         build_subtitles(clip, client, cfg.models()[0], cfg.tts_provider(), cfg.lang)
     return clips
+
+
+def save_clips(clips: list[Clip], path: Path) -> None:
+    import json
+    from dataclasses import asdict
+    path.write_text(json.dumps([asdict(c) for c in clips], ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def load_saved(path: Path) -> list[Clip]:
+    import json
+    out = []
+    for d in json.loads(path.read_text(encoding="utf-8")):
+        d["subs"] = [SubLine(**x) for x in d.get("subs", [])]
+        out.append(Clip(**d))
+    return out

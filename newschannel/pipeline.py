@@ -19,7 +19,7 @@ from .library import Library
 from . import media, planner, render
 from .config import Config
 from .i18n import t as label
-from .models import Asset, SceneAudio, Script, Story, Topic, save_json, script_from_dict
+from .models import Asset, SceneAudio, Script, Shot, Story, Topic, save_json, script_from_dict
 from .monetization import Issue, policy_check
 from .review import Store
 from .scriptwriter import build_description, fix_clip_scenes, write_script
@@ -107,6 +107,41 @@ def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_se
     return assets, used
 
 
+def save_media(run: Path, assets: list[Asset], used: list[str], plan: list[list[Shot]], music: str | None = None) -> None:
+    """The photos chosen for a video and where each goes. Saved so a draft can be reviewed/edited and resumed."""
+    (run / "media.json").write_text(json.dumps({
+        "assets": [asdict(a) for a in assets], "lib_used": used, "music": music,
+        "plan": [[asdict(x) for x in row] for row in plan]}, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def load_media(run: Path) -> tuple[list[Asset], list[str], list[list[Shot]], str | None] | None:
+    p = run / "media.json"
+    if not p.exists():
+        return None
+    d = json.loads(p.read_text(encoding="utf-8"))
+    return ([Asset(**a) for a in d["assets"]], d.get("lib_used", []), [[Shot(**x) for x in row] for row in d["plan"]],
+            d.get("music"))
+
+
+def stage_media(cfg: Config, topic: Topic, script: Script, run: Path, fmt: Any, client: Any, log: Callable[[str], None],
+                extra_images: list[Path] | None = None, library_ids: list[str] | None = None, approved_only: bool = False,
+                total_seconds: float | None = None, music: str | None = None):
+    """Gather candidate photos and let the AI arrange them across the scenes; saves media.json."""
+    model, vision_model = cfg.models()
+    total = total_seconds if total_seconds is not None else estimate_seconds(script)
+    assets, used = gather_assets(cfg, topic, script, run, total, extra_images or [], log, library_ids, client, model,
+                                 vision_model, (fmt.width, fmt.height), approved_only)
+    log("choosing and arranging photos…")
+    plan = planner.make_plan(client, vision_model, script.scenes, assets, cfg["images"]["max_per_scene"])
+    save_media(run, assets, used, plan, music)
+    return assets, used, plan
+
+
+def estimate_seconds(script: Script) -> float:
+    """Rough video length before any voice exists (used to decide how many photos are needed)."""
+    return sum(len(sc.narration.split()) / 2.4 + 0.7 for sc in script.scenes if sc.kind != "clip") + 5.0
+
+
 def synthesize_scenes(tts, script: Script, clips: list, folder: Path) -> list[SceneAudio]:
     """Voice for spoken scenes; original (loudness-normalised) audio for clip scenes."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -130,7 +165,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
             language: str | None = None, script: Script | None = None, ledger: Ledger | None = None,
             target_seconds: int | None = None, music: str | None = None,
             deep_check: tuple[list[str], list[str]] | None = None, as_of: str = "",
-            approved_only: bool = False) -> dict[str, Any]:
+            approved_only: bool = False, run_id: str | None = None,
+            prepared_clips: list | None = None, reuse_media: bool = False) -> dict[str, Any]:
     """Make one video. For deep-analysis videos pass a ready `script`, its fact `ledger` and the checker's results."""
     if language:
         cfg.data.setdefault("content", {})["language"] = language
@@ -140,14 +176,19 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         fmt.target_seconds = cfg.get("breaking", {}).get("target_seconds", 40)
     if target_seconds:
         fmt.target_seconds = target_seconds
-    run_id = f"{datetime.now().strftime('%Y%m%d')}-{topic.slug}-{fmt_name}"
+    run_id = run_id or f"{datetime.now().strftime('%Y%m%d')}-{topic.slug}-{fmt_name}"
     run = store.run_dir(run_id)
     brand = brand_from(cfg)
     model, vision_model = cfg.models()
 
     # 0. original clips (speeches etc.) supplied by you: trim, normalise, transcribe, subtitle
-    clips = clipmod.load(cfg, [*(clip_folders or []), cfg.path(cfg["images"]["inbox_dir"]) / topic.slug / "clips"],
-                         run, client, fmt.fps)
+    if prepared_clips is not None:
+        clips = prepared_clips
+    else:
+        clips = clipmod.load(cfg, [*(clip_folders or []), cfg.path(cfg["images"]["inbox_dir"]) / topic.slug / "clips"],
+                             run, client, fmt.fps)
+        if clips:
+            clipmod.save_clips(clips, run / "clips.json")
     if clips:
         log(f"clips: {len(clips)} ({sum(c.duration for c in clips):.0f}s of original footage)")
 
@@ -190,14 +231,18 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         starts.append(t)
         t += d
 
-    # 3. pictures: user images first, stock fallback, AI picks + arranges
+    # 3. pictures: reuse the photos you approved in a review step, or gather + arrange them now
     clip_total = sum(a.duration for a, sc in zip(audios, script.scenes) if sc.kind == "clip")
-    assets, lib_used = gather_assets(cfg, topic, script, run, total - clip_total, extra_images or [], log,
-                                     library_ids, client, model, vision_model, (fmt.width, fmt.height), approved_only)
+    saved = load_media(run) if reuse_media else None     # only when resuming a reviewed draft
+    if saved:
+        assets, lib_used, plan, saved_music = saved
+        plan = planner.repair(plan, script.scenes, assets)
+        music = music or saved_music
+        log("using the photos you approved…")
+    else:
+        assets, lib_used, plan = stage_media(cfg, topic, script, run, fmt, client, log, extra_images, library_ids,
+                                             approved_only, total - clip_total)
     by_id = {a.id: a for a in assets}
-    log("choosing and arranging photos…")
-    plan = planner.make_plan(client, vision_model, script.scenes, assets,
-                             cfg["images"]["max_per_scene"])
     shots = planner.time_shots(plan, starts, durs)
     save_json(run / "plan.json", [asdict(s) for s in shots])
     card_shots: list[render.ShotT] = []

@@ -124,6 +124,9 @@ audio:
   music_volume: 0.10
   target_lufs: -14
 
+workflow:                      # step-by-step approval in the web app
+  default: {script: "manual", photos: "manual"}   # "manual" = stop and ask me, "auto" = continue by itself. (daily/breaking runs are always automatic)
+
 review:
   require_approval: true       # never auto-publish unless you turn this off
   telegram: true               # if token configured

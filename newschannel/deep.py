@@ -6,6 +6,7 @@ confirmed must be attributed by name (checked in code), and banned patterns (min
 rejected. A script that still fails after retries is flagged so you cannot approve it by accident."""
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -406,13 +407,21 @@ def as_of_text(tz: str = "Asia/Kolkata", now: datetime | None = None) -> str:
 
 def write_analysis(client: Any, model: str, ledger: Ledger, stance: str, minutes: float, lang: str, channel: str,
                    cfg_analysis: dict | None = None, insights: str = "", as_of: str = "",
-                   log: Callable[[str], None] = print) -> Written:
+                   log: Callable[[str], None] = print, instruction: str = "", previous_raw: dict | None = None) -> Written:
     ca = cfg_analysis or {}
     lo, hi = words_budget(minutes)
     system = WRITE_SYSTEM.format(lang_rules=LANG_RULES[norm(lang)], stance_rules=STANCE_RULES[stance])
     base = (f"Channel: {channel}\nTopic: {ledger.topic}\nTarget length: {minutes} minutes (about {lo}-{hi} words of narration in total)\n"
             f"As of: {as_of or ledger.as_of or 'now'}\n\nLEDGER (the only facts you may use):\n{claims_block(ledger)}"
             + (f"\n\nWhat has worked on this channel (style only, never facts):\n{insights}" if insights else ""))
+    if instruction and previous_raw:
+        compact = [{"section": sc.get("section"), "headline": sc.get("headline"), "card": sc.get("card"),
+                    "beats": [{"type": b.get("type"), "text": b.get("text"), "claim_ids": b.get("claim_ids"),
+                               "attributed_to": b.get("attributed_to")} for b in sc.get("beats", [])]}
+                   for sc in previous_raw.get("scenes", [])]
+        base += ("\n\nCURRENT DRAFT (revise it; every fact rule still applies):\n"
+                 + json.dumps({"title": previous_raw.get("title"), "scenes": compact}, ensure_ascii=False)
+                 + f"\n\nEDITOR'S INSTRUCTION - apply it and return the complete revised script: {instruction}")
     feedback, written = "", None
     for attempt in range(3):
         res = call_tool(client, model, system, base + feedback, "submit_analysis", WRITE_SCHEMA, 16000)

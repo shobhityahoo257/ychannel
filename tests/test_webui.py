@@ -324,3 +324,94 @@ def test_page_photos_endpoint_enforces_rights(client, monkeypatch):
     ok = c.post(f"/api/scout/{sid}/approve", json={"ids": licensed}).get_json()
     assert len(ok["photos"]) == len(licensed) and ok["photos"][0]["license"] == "CC BY 4.0"
     assert "Priya Rao" in ok["photos"][0]["credit"]
+
+
+def test_step_by_step_flow_through_the_api(client):
+    c, tmp = client
+    mode = json.dumps({"script": "manual", "photos": "manual"})
+    data = {"headline": "संसद में बहस", "text": "तथ्य", "format": "short", "mode": mode, "images": [(jpeg(41), "a.jpg"), (jpeg(42), "b.jpg")]}
+    r = c.post("/api/create", data=data, content_type="multipart/form-data").get_json()
+    wid = r["workflow"]
+    j = wait(c, r["job"])
+    assert j["status"] == "done", j["error"]
+    assert j["result"]["status"] == "script_review"
+    assert [d["id"] for d in c.get("/api/workflows").get_json()["drafts"]] == [wid]
+    assert c.get("/api/videos").get_json()["videos"] == []                                # a draft is not a video yet
+    st = c.get(f"/api/workflows/{wid}").get_json()
+    assert st["status"] == "script_review" and len(st["script"]["scenes"]) == 4 and st["media"] is None and st["mode"] == {"script": "manual", "photos": "manual"}
+    # out-of-order and bad requests
+    assert c.post(f"/api/workflows/{wid}/approve_media").status_code == 409
+    assert c.post(f"/api/workflows/{wid}/media", json={"plan": []}).status_code == 409
+    assert c.post(f"/api/workflows/{wid}/revise", json={"instruction": " "}).status_code == 400
+    assert c.get("/api/workflows/nope").status_code == 404
+    # edit + AI revision
+    edited = c.post(f"/api/workflows/{wid}/script", json={"title": "नया शीर्षक", "scenes": [{"headline": "नई हेडलाइन"}]}).get_json()
+    assert edited["script"]["title"] == "नया शीर्षक" and edited["script"]["scenes"][0]["headline"] == "नई हेडलाइन"
+    rv = wait(c, c.post(f"/api/workflows/{wid}/revise", json={"instruction": "shorter"}).get_json()["job"])
+    assert rv["status"] == "done" and rv["result"]["status"] == "script_review"
+    # approve the script -> photos step (voice not generated yet)
+    ap = wait(c, c.post(f"/api/workflows/{wid}/approve_script", json={}).get_json()["job"])
+    assert ap["status"] == "done" and ap["result"]["status"] == "media_review"
+    st = c.get(f"/api/workflows/{wid}").get_json()
+    assert st["media"] and len(st["media"]["assets"]) == 2 and len(st["media"]["plan"]) == 4
+    aid = st["media"]["assets"][0]["id"]
+    assert c.get(f"/api/workflows/{wid}/asset/{aid}.jpg").status_code == 200
+    assert c.get(f"/api/workflows/{wid}/asset/..%2Fx.jpg").status_code == 404
+    # add a photo, arrange, pick music, go back to the script and forward again
+    up = c.post(f"/api/workflows/{wid}/assets", data={"files": [(jpeg(43), "c.jpg"), (io.BytesIO(b"x"), "bad.exe")]},
+                content_type="multipart/form-data").get_json()
+    assert up["added"] == 1 and len(up["media"]["assets"]) == 3
+    ids = [a["id"] for a in up["media"]["assets"]]
+    saved = c.post(f"/api/workflows/{wid}/media", json={"plan": [[{"asset_id": ids[2]}], [{"asset_id": ids[0]}], [], []], "music": "calm"}).get_json()
+    assert saved["media"]["plan"][0][0]["asset_id"] == ids[2] and saved["media"]["music"] == "calm"
+    assert c.post(f"/api/workflows/{wid}/reopen_script").get_json()["status"] == "script_review"
+    assert wait(c, c.post(f"/api/workflows/{wid}/approve_script", json={}).get_json()["job"])["result"]["status"] == "media_review"
+    fin = wait(c, c.post(f"/api/workflows/{wid}/approve_media").get_json()["job"])
+    assert fin["status"] == "done", fin["error"]
+    assert c.get("/api/workflows").get_json()["drafts"] == []
+    v = c.get("/api/videos").get_json()["videos"][0]
+    assert v["id"] == wid and v["status"] == "pending" and v["title"] == "नया शीर्षक" or v["id"] == wid
+    assert c.delete(f"/api/workflows/{wid}").status_code == 200 and c.get(f"/api/workflows/{wid}").status_code == 404
+
+
+def test_auto_mode_runs_everything_in_one_go(client):
+    c, tmp = client
+    mode = json.dumps({"script": "auto", "photos": "auto"})
+    data = {"headline": "संसद में बहस", "text": "तथ्य", "format": "short", "mode": mode, "images": [(jpeg(51), "a.jpg")]}
+    j = wait(c, c.post("/api/create", data=data, content_type="multipart/form-data").get_json()["job"])
+    assert j["status"] == "done", j["error"]
+    assert c.get("/api/videos").get_json()["videos"]                                       # straight to a finished video
+    # no "mode" at all behaves exactly as before (automatic), and an all-auto mode never creates a draft
+    data2 = {"headline": "दूसरी खबर", "text": "तथ्य", "format": "short", "images": [(jpeg(52), "a.jpg")]}
+    assert wait(c, c.post("/api/create", data=data2, content_type="multipart/form-data").get_json()["job"])["status"] == "done"
+    assert c.get("/api/workflows").get_json()["drafts"] == []
+
+
+def test_deep_step_by_step_blocks_a_failing_script_until_edited(client, monkeypatch):
+    import test_analysis as TA
+    from newschannel.ledger import Ledger
+    c, tmp = client
+    fc = TA.client_for_research("critical", 0.2)
+    monkeypatch.setattr(webui, "make_client", lambda cfg, required=True: fc)
+    monkeypatch.setattr("newschannel.research.fetch_article", TA.fake_fetch)
+    res = wait(c, c.post("/api/analysis/research", json={"headline": "MSP hike", "urls": "\n".join(TA.TEXTS)}).get_json()["job"])["result"]
+    led = Ledger.load(tmp / "out" / "_research" / res["research_id"] / "ledger.json")
+    scenes = TA.good_scenes(led)
+    scenes[1]["beats"][0]["text"] = "Cabinet ne wheat ka MSP 18 percent badhaya."
+    fc.answers["submit_analysis"] = {"title": "MSP hike: kya sach hai?", "description": "d", "tags": [], "scenes": scenes}
+    fc.answers["arrange_photos"] = lambda kw: {"scenes": []}
+    form = {"research_id": res["research_id"], "minutes": str(TA.minutes_for(TA.good_scenes(led))), "language": "hinglish", "stance": "auto",
+            "mode": json.dumps({"script": "manual", "photos": "auto"})}
+    r = c.post("/api/analysis/create", data=form, content_type="multipart/form-data").get_json()
+    assert wait(c, r["job"])["result"]["status"] == "script_review"
+    wid = r["workflow"]
+    st = c.get(f"/api/workflows/{wid}").get_json()
+    assert st["check"]["violations"] and st["script"]["scenes"][1]["beats"][0]["claim_ids"] and st["params"]["stance"] == "critical"
+    blocked = c.post(f"/api/workflows/{wid}/approve_script", json={})
+    assert blocked.status_code == 409 and "18" in " ".join(blocked.get_json()["violations"])
+    fixed = c.post(f"/api/workflows/{wid}/script", json={"scenes": [{}, {"beats": [{"text": "Cabinet ne wheat ka MSP 15 percent badhaya."}]}]}).get_json()
+    assert fixed["result"]["violations"] == [] and fixed["check"]["violations"] == []
+    j = wait(c, c.post(f"/api/workflows/{wid}/approve_script", json={}).get_json()["job"])
+    assert j["status"] == "done", j["error"]                                               # photos were set to auto, so it went on to render
+    v = c.get("/api/videos").get_json()["videos"][0]
+    assert v["id"] == wid and v["analysis"]["stance"] == "critical" and not [i for i in v["issues"] if i["level"] == "block"]

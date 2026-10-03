@@ -23,6 +23,7 @@ from .llm import make_client
 from .library import Library
 from . import analysis as analysis_mod
 from . import pagephotos
+from . import workflow as wfm
 from . import scout as scout_mod
 from .models import Topic
 from .pipeline import manual_topic, produce
@@ -36,6 +37,7 @@ VID_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
 STEPS = ["clips", "writing script", "synthesizing voice", "user images", "choosing and arranging",
          "rendering"]
 RESEARCH_STEPS = ["fetching sources", "extracting claims", "cross-checking", "deciding angle"]
+WF_STEPS = ["writing", "polishing", "choosing and arranging", "synthesizing voice", "rendering"]
 SCOUT_STEPS = ["planning photo needs", "searching", "rating photos"]
 ANALYSIS_STEPS = ["writing the", "polishing", "synthesizing voice", "choosing and arranging", "rendering"]
 
@@ -132,6 +134,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             "channel": c["channel"]["name"],
             "keys": {k: has(k) for k in KEY_NAMES},
             "llm_provider": c.llm_provider(), "tts_provider": c.tts_provider(),
+            "workflow_default": c.get("workflow", {}).get("default", {"script": "manual", "photos": "manual"}),
             "checks": [
                 {"name": "ffmpeg", "ok": bool(sh.which("ffmpeg")),
                  "help": "Terminal: brew install ffmpeg"},
@@ -383,9 +386,14 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             spec.append(f"{name}: {rng} | {m.get('credit', '')} | {m.get('note', '')}")
         if spec:
             (clip_dir / "clips.txt").write_text("\n".join(spec), encoding="utf-8")
-        jobs[job.id] = job
         lib_ids = [i for i in json.loads(f.get("library_ids", "[]")) if isinstance(i, str)]
         language = f.get("language") if f.get("language") in ("hinglish", "hindi") else None
+        mode = parse_mode(f)
+        if mode and not demo:                     # step-by-step: stop for approval after the steps marked "manual"
+            return start_workflow("news", topic.title, topic.slug, fmt,
+                                  {"topic": wfm.topic_to_dict(topic), "format": fmt, "language": language,
+                                   "library_ids": lib_ids}, mode, img_dir, clip_dir if spec else None)
+        jobs[job.id] = job
         threading.Thread(target=run_job, args=(job, topic, fmt, img_dir, clip_dir if spec else None, demo, lib_ids, language),
                          daemon=True).start()
         return jsonify({"job": job.id})
@@ -411,6 +419,16 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 led, _ = analysis_mod.load_research(store(), rid)
                 from . import deep as deep_mod
                 story = f"{led.topic}\n" + deep_mod.ledger_brief(led)
+            elif body.get("workflow_id"):
+                wid = str(body["workflow_id"])
+                if not wid.replace("-", "").isalnum() or not wfm.Workflow.exists(store(), wid):
+                    abort(404)
+                w = wfm.Workflow(store(), wid)
+                sc = w.script()
+                story = sc.title + "\n" + "\n".join(f"{x.headline}. {x.narration[:220]}" for x in sc.scenes)
+                if w.state["kind"] == "analysis":
+                    from . import deep as deep_mod
+                    story += "\n" + deep_mod.ledger_brief(w.ledger(), 40)
             elif body.get("topic_id") and topics.get(body["topic_id"]):
                 t = topics[body["topic_id"]]
                 story = t.title + "\n" + "\n".join(f"{x.title}. {x.summary}" for x in t.stories[:5])
@@ -485,6 +503,182 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         if not name.endswith(".jpg") or not name[:-4].isalnum() or not p.exists():
             abort(404)
         return send_file(p, conditional=True, max_age=3600)
+
+    # ----- step-by-step approval workflow (script -> photos & media -> video)
+    def get_wf(rid: str) -> "wfm.Workflow":
+        if not rid.replace("-", "").isalnum() or not wfm.Workflow.exists(store(), rid):
+            abort(404)
+        return wfm.Workflow(store(), rid)
+
+    def parse_mode(f: Any) -> dict[str, str] | None:
+        raw = f.get("mode")
+        if not raw:
+            return None
+        try:
+            m = json.loads(raw)
+        except ValueError:
+            return None
+        m = {"script": m.get("script", "auto"), "photos": m.get("photos", "auto")}
+        return m if "manual" in m.values() and all(v in wfm.MODES for v in m.values()) else None
+
+    def wf_job(wf: "wfm.Workflow", fn, will_render: bool) -> Any:
+        """Run a stage in the background; render stages take the one-render-at-a-time lock."""
+        import contextlib
+        job = Job(wf.state["title"], WF_STEPS)
+        jobs[job.id] = job
+
+        def work():
+            with (run_lock if will_render else contextlib.nullcontext()):
+                job.status = "running"
+                try:
+                    c = cfg()
+                    fn(c, make_client(c), make_tts(c), job.log)
+                    job.result = {"workflow": wf.id, "status": wf.state["status"]}
+                    job.status = "done"
+                except Exception as exc:
+                    job.status, job.error = "error", f"{type(exc).__name__}: {exc}"
+
+        threading.Thread(target=work, daemon=True).start()
+        return jsonify({"job": job.id, "workflow": wf.id})
+
+    def start_workflow(kind: str, title: str, slug: str, fmt: str, params: dict, mode: dict, img_dir: Path,
+                       clip_dir: Path | None):
+        wf = wfm.Workflow.create(store(), kind, title, slug, fmt, params, mode)
+        inputs = wf.dir / "inputs"
+        if img_dir.exists() and any(img_dir.iterdir()):
+            shutil.copytree(img_dir, inputs / "images")
+        if clip_dir and clip_dir.exists():
+            shutil.copytree(clip_dir, inputs / "clips")
+        shutil.rmtree(img_dir.parent, ignore_errors=True)
+        will_render = mode["script"] == "auto" and mode["photos"] == "auto"
+        return wf_job(wf, lambda c, cl, tts, log: wfm.advance(c, cl, tts, wf, log), will_render)
+
+    def wf_view(wf: "wfm.Workflow") -> dict[str, Any]:
+        st = wf.state
+        out = {k: st.get(k) for k in ("id", "kind", "status", "title", "format", "mode", "error", "created")}
+        out["params"] = {k: v for k, v in st["params"].items() if k in ("language", "stance", "minutes", "music", "breaking", "research_id")}
+        if (wf.dir / "script.json").exists() and st["status"] != "queued":
+            out["script"] = wfm.describe_script(wf)
+            out["check"] = wf.check() if st["kind"] == "analysis" else None
+        out["media"] = wfm.describe_media(wf)
+        if st["status"] == "done":
+            out["video_id"] = st.get("video_id")
+        return out
+
+    @app.get("/api/workflows")
+    def wf_list():
+        return jsonify({"drafts": wfm.list_drafts(store())})
+
+    @app.get("/api/workflows/<rid>")
+    def wf_get(rid: str):
+        return jsonify(wf_view(get_wf(rid)))
+
+    @app.delete("/api/workflows/<rid>")
+    def wf_delete(rid: str):
+        wfm.discard(get_wf(rid))
+        return jsonify({"ok": True})
+
+    def need_status(wf: "wfm.Workflow", *allowed: str):
+        if wf.state["status"] not in allowed:
+            return jsonify({"error": f"This step is not available right now (status: {wf.state['status']})."}), 409
+        return None
+
+    @app.post("/api/workflows/<rid>/script")
+    def wf_script_edit(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "script_review")):
+            return err
+        res = wfm.save_script_edits(cfg(), wf, request.get_json(force=True) or {})
+        return jsonify({**wf_view(wf), "result": res})
+
+    @app.post("/api/workflows/<rid>/revise")
+    def wf_revise(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "script_review")):
+            return err
+        instruction = ((request.get_json(force=True) or {}).get("instruction") or "").strip()
+        if not instruction:
+            return jsonify({"error": "Tell the AI what to change."}), 400
+        return wf_job(wf, lambda c, cl, tts, log: wfm.stage_script(c, cl, wf, log, instruction), False)
+
+    @app.post("/api/workflows/<rid>/approve_script")
+    def wf_approve_script(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "script_review")):
+            return err
+        body = request.get_json(silent=True) or {}
+        try:
+            wfm.approve_script_check(wf, bool(body.get("force")))
+        except wfm.Blocked as exc:
+            return jsonify({"error": str(exc), "violations": wf.check()["violations"]}), 409
+        auto_rest = bool(body.get("auto_rest"))
+        will_render = auto_rest or wf.state["mode"]["photos"] == "auto"
+        return wf_job(wf, lambda c, cl, tts, log: wfm.approve_script(c, cl, tts, wf, log, auto_rest, bool(body.get("force"))),
+                      will_render)
+
+    @app.post("/api/workflows/<rid>/media")
+    def wf_media_edit(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "media_review")):
+            return err
+        body = request.get_json(force=True) or {}
+        wfm.save_plan(wf, body.get("plan") or [], body.get("music"))
+        return jsonify(wf_view(wf))
+
+    @app.post("/api/workflows/<rid>/assets")
+    def wf_assets(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "media_review")):
+            return err
+        files = []
+        for file in request.files.getlist("files"):
+            ext = Path(file.filename or "").suffix.lower()
+            if ext in IMG_EXT:
+                tmp = ROOT / "uploads" / f"wf_{uuid.uuid4().hex[:8]}{ext}"
+                tmp.parent.mkdir(exist_ok=True)
+                file.save(tmp)
+                files.append(tmp)
+        ids = request.form.get("library_ids") or (request.get_json(silent=True) or {}).get("library_ids") or []
+        if isinstance(ids, str):
+            ids = json.loads(ids)
+        try:
+            n = wfm.add_assets(cfg(), wf, [i for i in ids if isinstance(i, str)], files)
+        finally:
+            for f in files:
+                f.unlink(missing_ok=True)
+        return jsonify({**wf_view(wf), "added": n})
+
+    @app.post("/api/workflows/<rid>/replan")
+    def wf_replan(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "media_review")):
+            return err
+        return wf_job(wf, lambda c, cl, tts, log: wfm.replan(c, cl, wf, log), False)
+
+    @app.post("/api/workflows/<rid>/reopen_script")
+    def wf_reopen(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "media_review")):
+            return err
+        wfm.reopen_script(wf)
+        return jsonify(wf_view(wf))
+
+    @app.post("/api/workflows/<rid>/approve_media")
+    def wf_approve_media(rid: str):
+        wf = get_wf(rid)
+        if (err := need_status(wf, "media_review")):
+            return err
+        if run_lock.locked():
+            return jsonify({"error": "A video is already being rendered. Please wait until it finishes."}), 409
+        return wf_job(wf, lambda c, cl, tts, log: wfm.approve_media(c, cl, tts, wf, log), True)
+
+    @app.get("/api/workflows/<rid>/asset/<name>")
+    def wf_asset(rid: str, name: str):
+        wf = get_wf(rid)
+        p = wfm.thumb_path(wf, name[:-4]) if name.endswith(".jpg") and name[:-4].isalnum() else None
+        if not p:
+            abort(404)
+        return send_file(p, conditional=True, max_age=600)
 
     # ----- deep analysis: step 1 research + fact-check, step 2 create
     @app.post("/api/analysis/research")
@@ -562,6 +756,11 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             if ext in IMG_EXT:
                 file.save(img_dir / f"{uuid.uuid4().hex[:8]}{ext}")
         lib_ids = [i for i in json.loads(f.get("library_ids", "[]")) if isinstance(i, str)]
+        mode = parse_mode(f)
+        if mode:
+            return start_workflow("analysis", led.topic, "analysis", "analysis",
+                                  {"research_id": rid, "stance": stance, "minutes": minutes, "language": language,
+                                   "music": f.get("music") or None, "library_ids": lib_ids}, mode, img_dir, None)
         jobs[job.id] = job
 
         def work():
