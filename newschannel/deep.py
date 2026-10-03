@@ -203,8 +203,9 @@ Rules the checker enforces automatically:
  - alleged claims are never stated as fact; say who alleged it.
  - numbers must come from the cited claims. No invented numbers, dates, names or quotes.
  - never: mind-reading ("he is scared", "they panicked", "sweating"), hearsay ("sources say", "it is said", "inside story"), insults.
-Cards: for a scene you may add card = {{type: quote|number|timeline, claim_ids: [...], label: short label}} - quote needs a quote claim, number a claim with a number,
-timeline 3-6 claims that have dates. The card content is filled from the ledger by code.
+Cards: for a scene you may add card = {{type: quote|number|timeline|sources, claim_ids: [...], label: short label}} - quote needs a quote claim, number a claim with a number,
+timeline 3-6 claims that have dates, sources shows the outlets and headlines behind the cited claims (a copyright-safe way to show "what the reports say";
+use it when you introduce the reporting). The card content is filled from the ledger by code.
 Also give per scene: section, headline (max 50 chars), visual_query (2-4 English words for a stock photo, never a person's name).
 Title: honest, curiosity-driven, max 70 chars. Description: 2-3 lines."""
 
@@ -214,7 +215,7 @@ WRITE_SCHEMA = {"type": "object", "properties": {
         "section": {"type": "string", "enum": SECTIONS},
         "headline": {"type": "string"}, "visual_query": {"type": "string"},
         "card": {"type": "object", "properties": {
-            "type": {"type": "string", "enum": ["none", "quote", "number", "timeline"]},
+            "type": {"type": "string", "enum": ["none", "quote", "number", "timeline", "sources"]},
             "claim_ids": {"type": "array", "items": {"type": "string"}}, "label": {"type": "string"}}},
         "beats": {"type": "array", "items": {"type": "object", "properties": {
             "type": {"type": "string", "enum": ["fact", "quote", "analysis", "transition", "question", "cta", "gap"]},
@@ -332,7 +333,7 @@ def lint(res_scenes: list[dict[str, Any]], ledger: Ledger, stance: str, minutes:
                 if not any(contains(c.quote or c.evidence, q) or contains(c.evidence, q) for c in cited):
                     bad.append(f"{where}: quoted words \"{q[:50]}\" are not word-for-word in the cited claims.")
         card = sc.get("card") or {}
-        if card.get("type") in ("quote", "number", "timeline"):
+        if card.get("type") in ("quote", "number", "timeline", "sources"):
             cs = [ledger.claim(i) for i in card.get("claim_ids") or []]
             if any(c is None or c.status not in USABLE for c in cs) or not cs:
                 bad.append(f"{tag}: card cites unknown/unusable claims.")
@@ -342,6 +343,9 @@ def lint(res_scenes: list[dict[str, Any]], ledger: Ledger, stance: str, minutes:
                 bad.append(f"{tag}: a number card needs a claim with a number.")
             elif card["type"] == "timeline" and sum(1 for c in cs if c.date) < 2:
                 bad.append(f"{tag}: a timeline card needs 2+ dated claims.")
+            elif card["type"] == "sources" and not any(ledger.source(sid) and ledger.source(sid).outlet != "user notes"
+                                                       for c in cs for sid in c.source_ids):
+                bad.append(f"{tag}: a sources card needs claims that come from published sources.")
     lo, hi = words_budget(minutes)
     if not (lo * 0.8 <= total_words <= hi * 1.1):
         bad.append(f"Narration is {total_words} words; for {minutes} minutes it must be about {lo}-{hi}.")
@@ -380,7 +384,7 @@ def to_script(res: dict[str, Any], ledger: Ledger, stance: str, lang: str) -> Sc
             kind="analysis" if section in ("analysis", "counterpoint", "scenarios") else ("outro" if i == n - 1 else "news"),
             section=section, claim_ids=ids, source_tag=source_tag(ledger, ids),
             card=({"type": card["type"], "claim_ids": card.get("claim_ids", []), "label": card.get("label", "")}
-                  if card.get("type") in ("quote", "number", "timeline") else None)))
+                  if card.get("type") in ("quote", "number", "timeline", "sources") else None)))
     return Script(title=res["title"].strip(), description=res["description"].strip(),
                   tags=[x.strip() for x in res.get("tags", [])][:12],
                   scenes=scenes, sources=sorted({friendly(s.outlet) for s in ledger.sources if s.outlet != "user notes"}),

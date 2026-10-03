@@ -53,6 +53,8 @@ class Candidate:
     reason: str = ""
     flags: list[str] = field(default_factory=list)
     recommended: bool = False
+    rights: str = "licensed"     # licensed | official | unknown | blocked  (unknown/blocked can never be imported)
+    note: str = ""               # plain-language explanation of the rights status
 
     @property
     def generic(self) -> bool:
@@ -175,6 +177,11 @@ PROVIDER_LABEL = {"wikimedia": "Wikimedia Commons", "openverse": "Openverse", "p
 
 
 def credit_for(c: Candidate) -> str:
+    if c.provider == "page":
+        from .ledger import friendly, outlet_of
+        if c.rights == "official":
+            return f"Photo: {friendly(outlet_of(c.page_url))} (official source) - {c.page_url}"
+        return f"{c.creator} ({c.license}) - {c.page_url}"
     if c.provider == "pexels":
         return f"Photo by {c.creator} on Pexels (Pexels License)"
     if c.provider == "pixabay":
@@ -297,6 +304,39 @@ def rate(client: Any, model: str, need: dict[str, Any], cands: list[Candidate], 
 
 
 # ----------------------------------------------------------------------------- the scout
+def finish_need(client: Any, model: str, need: dict[str, Any], pool: list[Candidate], thumbs_dir: Path,
+                download: Callable[[str], bytes], log: Callable[[str], None], min_rec: float, per_need: int) -> list[Candidate]:
+    """Thumbnail, AI-rate and rank the candidates for one need."""
+    thumbs: dict[str, bytes] = {}
+    for c in pool:
+        try:
+            t = _thumb_bytes(download(c.thumb_url))
+        except Exception:
+            t = None
+        if t:
+            thumbs[c.id] = t
+            (thumbs_dir / f"{c.id}.jpg").write_bytes(t)
+    pool = [c for c in pool if c.id in thumbs]
+    if client is not None and pool:
+        try:
+            rate(client, model, need, pool, thumbs)
+        except Exception as exc:
+            log(f"[scout] AI rating failed for '{need['label']}': {exc}")
+            for c in pool:
+                c.score, c.reason = min(c.text_score, 5.0), "AI rating unavailable; keyword match only"
+    else:
+        for c in pool:
+            c.score, c.reason = min(c.text_score, 6.0), "keyword match only (no AI rating)"
+    pool = [c for c in pool if not (set(c.flags) & DROP_FLAGS)]
+    for c in pool:
+        if c.generic and need["kind"] != "concept":
+            c.score = min(c.score, 6.0)
+        if set(c.flags) & {"text_overlay", "low_quality", "misleading"}:
+            c.score = min(c.score, 4.0)
+        c.recommended = c.score >= min_rec and c.rights in ("licensed",)
+    return sorted(pool, key=lambda c: -c.score)[:per_need]
+
+
 def collect(cfg: Config, client: Any, needs: list[dict[str, Any]], thumbs_dir: Path, log: Callable[[str], None] = print,
             providers: dict[str, Callable[..., list[Candidate]]] | None = None,
             download: Callable[[str], bytes] | None = None, seen: set[str] | None = None) -> tuple[list[Candidate], dict[str, str]]:
@@ -348,34 +388,7 @@ def collect(cfg: Config, client: Any, needs: list[dict[str, Any]], thumbs_dir: P
     all_c: list[Candidate] = []
     for need in needs:
         pool = sorted(found[need["id"]].values(), key=lambda c: -c.text_score)[:per_need * 2]
-        thumbs: dict[str, bytes] = {}
-        for c in pool:
-            try:
-                t = _thumb_bytes(download(c.thumb_url))
-            except Exception:
-                t = None
-            if t:
-                thumbs[c.id] = t
-                (thumbs_dir / f"{c.id}.jpg").write_bytes(t)
-        pool = [c for c in pool if c.id in thumbs]
-        if client is not None and pool:
-            try:
-                rate(client, model, need, pool, thumbs)
-            except Exception as exc:
-                log(f"[scout] AI rating failed for '{need['label']}': {exc}")
-                for c in pool:
-                    c.score, c.reason = min(c.text_score, 5.0), "AI rating unavailable; keyword match only"
-        else:
-            for c in pool:
-                c.score, c.reason = min(c.text_score, 6.0), "keyword match only (no AI rating)"
-        pool = [c for c in pool if not (set(c.flags) & DROP_FLAGS)]
-        for c in pool:
-            if c.generic and need["kind"] != "concept":
-                c.score = min(c.score, 6.0)
-            if set(c.flags) & {"text_overlay", "low_quality", "misleading"}:
-                c.score = min(c.score, 4.0)
-            c.recommended = c.score >= min_rec
-        all_c += sorted(pool, key=lambda c: -c.score)[:per_need]
+        all_c += finish_need(client, model, need, pool, thumbs_dir, download, log, min_rec, per_need)
     return all_c, status
 
 
@@ -429,7 +442,8 @@ def load_session(folder: Path) -> dict[str, Any]:
 
 
 def approve(folder: Path, ids: list[str], library: Any, min_side: int = 700,
-            download: Callable[[str], bytes] | None = None, log: Callable[[str], None] = print) -> list[Any]:
+            download: Callable[[str], bytes] | None = None, log: Callable[[str], None] = print,
+            confirm_official: bool = False, skipped: list[dict[str, str]] | None = None) -> list[Any]:
     """Download the full-size photos you approved into your library (with credit + license). Returns library entries."""
     download = download or fetch_bytes
     session = load_session(folder)
@@ -439,6 +453,14 @@ def approve(folder: Path, ids: list[str], library: Any, min_side: int = 700,
     for i in ids:
         c = by.get(i)
         if not c:
+            continue
+        # Enforced here, on the server, whatever the screen sends: photos without a clear right to use are never imported.
+        if c.rights in ("unknown", "blocked"):
+            (skipped if skipped is not None else []).append({"id": c.id, "reason": c.note or "rights not stated"})
+            log(f"[scout] refused {c.title[:40]}: {c.note}")
+            continue
+        if c.rights == "official" and not confirm_official:
+            (skipped if skipped is not None else []).append({"id": c.id, "reason": "confirm you checked the site's reuse terms"})
             continue
         tmp = folder / f"_full_{c.id}.jpg"
         try:

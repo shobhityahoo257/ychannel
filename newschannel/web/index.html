@@ -88,6 +88,8 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
 .need{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
 .need h3{margin:0 0 2px;font-size:15px}
 .sticky{position:sticky;top:-4vh;background:var(--card);padding:6px 0 10px;z-index:3}
+.lib .p.locked{opacity:.7;cursor:not-allowed}.lib .p.locked img{filter:grayscale(.6)}
+.pill.bad{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
 </style>
 </head>
 <body>
@@ -308,6 +310,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
 </section>
 </main>
 <div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
+<div class="modal" id="modal2" style="z-index:30"><div class="box" id="modal2Box" style="max-width:640px"></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -609,11 +612,29 @@ async function loadVideoLedger(v,el){ const box=el.querySelector('.ledbody');
 const SCOUT_STEPS=[['rating photos','⭐ Rating how well each photo fits'],['searching','🔎 Searching free photo archives'],['planning photo needs','🧠 Working out which visuals the story needs']];
 let scoutCtx=null;
 function scoreClass(x){ return x>=7?'hi':x>=5?'mid':'' }
+function rightsPill(c){
+  if(c.rights==='official') return '<span class="pill warn" title="'+esc(c.note)+'">Official · check terms</span>';
+  if(c.rights==='unknown') return '<span class="pill bad" title="'+esc(c.note)+'">Rights not stated</span>';
+  if(c.rights==='blocked') return '<span class="pill bad" title="'+esc(c.note)+'">Licence not allowed</span>';
+  return `<span class="pill ok">${esc(c.license)}</span>`
+}
 function scoutCard(c,sid,sel){
-  return `<div class="p sc ${sel?'sel':''}" data-id="${c.id}"><img loading="lazy" src="/api/scout/${sid}/thumb/${c.id}.jpg"><div class="tick">✓</div>
+  const locked=(c.rights==='unknown'||c.rights==='blocked');
+  const prov=({wikimedia:'Wikimedia Commons',openverse:'Openverse',pexels:'Pexels',pixabay:'Pixabay',page:'Your page'})[c.provider]||esc(c.provider);
+  return `<div class="p sc ${sel?'sel':''} ${locked?'locked':''}" data-id="${c.id}" data-locked="${locked?1:0}"><img loading="lazy" src="/api/scout/${sid}/thumb/${c.id}.jpg"><div class="tick">✓</div>
     <div class="score ${scoreClass(c.score)}">${Math.round(c.score)}/10</div>
-    <div class="cap"><b>${esc(c.title)}</b><span>${esc(c.creator)} · ${({wikimedia:'Wikimedia Commons',openverse:'Openverse',pexels:'Pexels',pixabay:'Pixabay'})[c.provider]||esc(c.provider)}</span><i>${esc(c.reason)}</i></div>
-    <div class="meta"><span class="pill ok">${esc(c.license)}</span> ${(c.provider==='pexels'||c.provider==='pixabay')?'<span class="pill warn" title="Generic stock photo, not from the actual event">stock</span> ':''}<a href="${esc(c.page_url)}" target="_blank" rel="noopener">source ↗</a></div></div>`
+    <div class="cap"><b>${esc(c.title)}</b><span>${esc(c.creator)} · ${prov}</span><i>${esc(c.reason)}</i></div>
+    <div class="meta">${rightsPill(c)} ${(c.provider==='pexels'||c.provider==='pixabay')?'<span class="pill warn" title="Generic stock photo, not from the actual event">stock</span> ':''}<a href="${esc(c.page_url)}" target="_blank" rel="noopener">source ↗</a>
+    ${locked?`<br><a href="#" data-ask="${c.id}">✉️ Ask permission</a>`:''}</div></div>`
+}
+function openDraft(c){
+  const ch=(status&&status.channel)||'my channel', hl=scoutCtx.headline||'this story';
+  const text=`Subject: Request to use your photo (with credit)\n\nHello,\n\nI run a news-analysis channel on YouTube (${ch}). I would like to use this photo in a video about "${hl}", with clear credit to ${c.creator}:\n${c.full_url}\n(found on: ${c.page_url})\n\nCould you please confirm that I may use it, and tell me about any conditions or fee?\n\nThank you,\n${ch}`;
+  $('#modal2Box').innerHTML=`<div class="row"><b style="font-size:17px">Ask for permission</b><button class="btn" id="d2Close" style="margin-left:auto">Close</button></div>
+    <p class="hint">Copy this message and send it to the photographer or outlet. Only use the photo after they agree in writing, then upload it yourself with their credit.</p>
+    <textarea id="d2Text" style="min-height:240px">${esc(text)}</textarea><div class="row" style="margin-top:10px"><button class="btn primary" id="d2Copy">📋 Copy message</button></div>`;
+  $('#modal2').classList.add('on'); $('#d2Close').onclick=()=>$('#modal2').classList.remove('on');
+  $('#d2Copy').onclick=async()=>{ await navigator.clipboard.writeText($('#d2Text').value); toast('Copied') }
 }
 function renderScout(){
   const r=scoutCtx.session, sid=scoutCtx.sid, sel=scoutCtx.sel;
@@ -623,11 +644,17 @@ function renderScout(){
       <div class="row" style="margin:6px 0"><input type="text" data-need="${n.id}" placeholder="Search this subject with other words..." style="flex:1;min-width:160px;padding:8px 10px"><button class="btn" data-search="${n.id}">Search</button></div>
       ${cs.length?`<div class="lib">${cs.map(c=>scoutCard(c,sid,sel.has(c.id))).join('')}</div>`:'<div class="hint">No suitable free photo found for this. Try other words above, or upload your own.</div>'}</div>` }).join('');
   $('#scoutBody').innerHTML=`<div class="hint" style="margin:0 0 6px">${prov}</div>
-    <div class="row"><input type="text" id="scoutExtra" placeholder="Search for something else (e.g. a place or event name)..." style="flex:1;min-width:200px"><button class="btn" id="scoutExtraGo">Search</button></div>${blocks}`;
-  $$('#scoutBody .sc').forEach(el=>el.onclick=e=>{ if(e.target.tagName==='A') return; const id=el.dataset.id; if(sel.has(id)){sel.delete(id);el.classList.remove('sel')}else{sel.add(id);el.classList.add('sel')} updateScoutBtn() });
+    <div class="row"><input type="text" id="scoutExtra" placeholder="Search for something else (e.g. a place or event name)..." style="flex:1;min-width:200px"><button class="btn" id="scoutExtraGo">Search</button></div>
+    <div class="row" style="margin-top:8px"><input type="text" id="scoutPage" placeholder="Or paste a news / official page link to look for its photos..." style="flex:1;min-width:200px"><button class="btn" id="scoutPageGo">Look for photos</button></div>
+    <p class="hint" style="margin:4px 0 0">Photos on news sites are usually copyrighted. From a page you give, only photos with a stated free licence or from an official government site can be used; the rest are shown for reference, and you can ask the owner for permission.</p>${blocks}`;
+  $$('#scoutBody [data-ask]').forEach(a=>a.onclick=e=>{ e.preventDefault(); e.stopPropagation(); openDraft(r.candidates.find(c=>c.id===a.dataset.ask)) });
+  $$('#scoutBody .sc').forEach(el=>el.onclick=e=>{ if(e.target.tagName==='A') return; const id=el.dataset.id;
+    if(el.dataset.locked==='1'){ toast(r.candidates.find(c=>c.id===id).note); return } if(sel.has(id)){sel.delete(id);el.classList.remove('sel')}else{sel.add(id);el.classList.add('sel')} updateScoutBtn() });
   const search=async(q,needId)=>{ if(!q.trim()) return; toast('Searching...'); try{ scoutCtx.session=await api(`/api/scout/${sid}/search`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,need_id:needId})}); renderScout() }catch(e){ toast('❌ '+e.message) } };
   $$('#scoutBody [data-search]').forEach(b=>b.onclick=()=>search($(`#scoutBody [data-need="${b.dataset.search}"]`).value,b.dataset.search));
   $('#scoutExtraGo').onclick=()=>search($('#scoutExtra').value,null);
+  $('#scoutPageGo').onclick=async()=>{ const u=$('#scoutPage').value.trim(); if(!u) return; toast('Reading the page...');
+    try{ scoutCtx.session=await api(`/api/scout/${sid}/page`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})}); renderScout() }catch(e){ toast('❌ '+e.message) } };
   updateScoutBtn();
 }
 function updateScoutBtn(){ const n=scoutCtx.sel.size; const b=$('#scoutUse'); b.textContent=n?`Use ${n} selected photo${n>1?'s':''}`:'Select photos to use'; b.disabled=!n }
@@ -637,15 +664,18 @@ async function openScout(kind){
     if(mode==='auto'){ if(!topicId) return toast('Pick a story first'); body.topic_id=topicId }
     else { if(!$('#headline').value.trim()) return toast('Write the headline first'); body.headline=$('#headline').value; body.text=$('#text').value } }
   else { if(!aResearch) return toast('Run the research first'); body.research_id=aResearch.research_id }
-  scoutCtx={kind,sel:new Set(),session:null,sid:null};
+  scoutCtx={kind,sel:new Set(),session:null,sid:null,headline:body.headline||''};
   $('#modalBox').innerHTML=`<div class="sticky"><div class="row"><b style="font-size:17px">Relevant free photos</b><button class="btn" id="scoutClose" style="margin-left:auto">Cancel</button><button class="btn primary" id="scoutUse" disabled>Select photos to use</button></div>
-    <p class="hint" style="margin:6px 0 0">Only photos you tick are used. Every photo is free to use commercially; credits are added to the video description automatically. Pre-ticked photos are the ones rated 7/10 or better.</p></div>
+    <p class="hint" style="margin:6px 0 0">Only photos you tick are used. Photos you can tick have a stated free licence (or come from an official source you confirm); credits are added to the video description automatically. Pre-ticked photos are the ones rated 7/10 or better.</p></div>
     <div id="scoutProg"><p class="hint" id="scoutStep">Starting...</p><div class="bar"><i id="scoutBar"></i></div><pre class="log" id="scoutLog"></pre></div><div id="scoutBody"></div>`;
   $('#modal').classList.add('on'); $('#scoutClose').onclick=closeModal;
-  $('#scoutUse').onclick=async()=>{ try{ $('#scoutUse').disabled=true; $('#scoutUse').textContent='Importing...';
-      const r=await api(`/api/scout/${scoutCtx.sid}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[...scoutCtx.sel]})});
+  $('#scoutUse').onclick=async()=>{ try{
+      const official=scoutCtx.session.candidates.filter(c=>scoutCtx.sel.has(c.id)&&c.rights==='official');
+      if(official.length && !confirm(`${official.length} selected photo(s) come from an official government site. Their usual policy allows free reuse with source credit and no misleading use, except material marked as third-party.\n\nHave you checked that site's copyright policy and will you use the photo accurately? (The credit is added automatically.)`)) return;
+      $('#scoutUse').disabled=true; $('#scoutUse').textContent='Importing...';
+      const r=await api(`/api/scout/${scoutCtx.sid}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[...scoutCtx.sel],confirm_official:official.length>0})});
       const target=kind==='create'?libSel:aLibSel; r.photos.forEach(p=>{ if(!target.some(x=>x.id===p.id)) target.push({id:p.id,thumb:p.thumb,caption:p.caption}) });
-      kind==='create'?renderLibChips():renderALibChips(); closeModal(); toast(`${r.photos.length} photo${r.photos.length===1?'':'s'} added to this video${r.photos.length<r.requested?` (${r.requested-r.photos.length} could not be imported)`:''}`) }catch(e){ toast('❌ '+e.message); updateScoutBtn() } };
+      kind==='create'?renderLibChips():renderALibChips(); closeModal(); toast(`${r.photos.length} photo${r.photos.length===1?'':'s'} added to this video${r.photos.length<r.requested?` (${r.requested-r.photos.length} not imported${r.skipped&&r.skipped.length?': '+r.skipped[0].reason:''})`:''}`) }catch(e){ toast('❌ '+e.message); updateScoutBtn() } };
   try{ const {job,sid}=await api('/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); scoutCtx.sid=sid;
     pollJob(job,{bar:$('#scoutBar'),log:$('#scoutLog'),step:$('#scoutStep'),title:$('#scoutStep'),fail:()=>{}},SCOUT_STEPS,j=>{
       $('#scoutProg').classList.add('hide'); scoutCtx.session=j.result; j.result.candidates.forEach(c=>{ if(c.recommended) scoutCtx.sel.add(c.id) }); renderScout() }) }

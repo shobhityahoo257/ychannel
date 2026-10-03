@@ -111,7 +111,40 @@ def timeline_card(ledger: Ledger, spec: dict[str, Any], brand: Brand, lang: str,
     return out
 
 
-BUILDERS = {"quote": quote_card, "number": number_card, "timeline": timeline_card}
+def sources_card(ledger: Ledger, spec: dict[str, Any], brand: Brand, lang: str, W: int, H: int, out: Path) -> Path:
+    """Outlet names + headlines behind the claims: shows the reporting without using anyone's photographs."""
+    srcs = []
+    for cid_ in spec["claim_ids"]:
+        c = ledger.claim(cid_)
+        for sid in (c.source_ids if c else []):
+            s = ledger.source(sid)
+            if s and s.outlet != "user notes" and s not in srcs:
+                srcs.append(s)
+    srcs = sorted(srcs, key=lambda s: s.tier)[:4]
+    if not srcs:
+        raise ValueError("no sources behind these claims")
+    im = _background(W, H, brand)
+    d = ImageDraw.Draw(im)
+    put(d, (W * 0.08, H * 0.10), spec.get("label") or t(lang, "sources_title"), font=font(brand.font_bold, int(H * 0.065)),
+        fill=(255, 255, 255), anchor="lm")
+    top, step = H * 0.22, (H * 0.70) / max(1, len(srcs))
+    hf, nf, tf = font(brand.font_bold, int(H * 0.048)), font(brand.font_bold, int(H * 0.036)), font(brand.font_regular, int(H * 0.034))
+    for i, s in enumerate(srcs):
+        y = top + i * step
+        d.rectangle((W * 0.08, y, W * 0.08 + 8, y + step * 0.78), fill=brand.accent if s.tier == 1 else (120, 130, 160))
+        put(d, (W * 0.11, y + 4), friendly(s.outlet), font=hf, fill=(255, 255, 255), anchor="la")
+        tier = t(lang, "tier1") if s.tier == 1 else t(lang, "tier2") if s.tier == 2 else t(lang, "tier3")
+        put(d, (W * 0.92, y + 10), tier, font=nf, fill=brand.accent if s.tier == 1 else (190, 196, 215), anchor="ra")
+        title = re.sub(r"\s*[|\-–]\s*[^|\-–]{2,30}$", "", s.title).strip()
+        for k, ln in enumerate(wrap(title, tf, int(W * 0.8))[:2]):
+            put(d, (W * 0.11, y + H * 0.075 + k * H * 0.045), ln, font=tf, fill=(220, 225, 240), anchor="la")
+        if s.published:
+            put(d, (W * 0.11, y + H * 0.17), s.published[:10], font=font(brand.font_regular, int(H * 0.03)), fill=(160, 168, 190), anchor="la")
+    im.save(out, quality=95)
+    return out
+
+
+BUILDERS = {"quote": quote_card, "number": number_card, "timeline": timeline_card, "sources": sources_card}
 
 
 def build_card(ledger: Ledger, spec: dict[str, Any], brand: Brand, lang: str, W: int, H: int, out: Path) -> Path | None:

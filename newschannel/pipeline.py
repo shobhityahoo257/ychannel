@@ -207,7 +207,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
             if not sc.card or sc.kind == "clip":
                 continue
             img = cards.build_card(ledger, sc.card, brand, lang, fmt.width, fmt.height, run / "cards" / f"card_{i}.jpg")
-            dc = min(8.0 if sc.card["type"] == "quote" else 6.0, 0.7 * durs[i])
+            dc = min(8.0 if sc.card["type"] in ("quote", "sources") else 6.0, 0.7 * durs[i])
             if not img or dc < 2.0:
                 continue
             mine = [x for x in shots if x.scene == i]

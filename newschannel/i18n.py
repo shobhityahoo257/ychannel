@@ -10,7 +10,7 @@ LABELS: dict[str, dict[str, str]] = {
     "hinglish": {
         "news": "Taaza Khabar", "analysis": "Vishleshan", "clip": "Original Video", "breaking": "BREAKING NEWS",
         "facts": "Confirmed Facts", "quote": "Statement", "timeline": "Timeline", "numbers": "By The Numbers",
-        "ledger": "Kya pakka, kya nahi",
+        "ledger": "Kya pakka, kya nahi", "sources_title": "What the reports say",
         "ticker": "Headlines", "source": "Source", "thumb_tag": "TAAZA KHABAR",
         "intro_tag": "Bharatiya rajneeti, seedhi aur saaf baat",
         "outro_title": "Channel ko subscribe karein", "outro_sub": "Roz taaza rajneetik khabrein",
@@ -34,7 +34,7 @@ LABELS: dict[str, dict[str, str]] = {
     "hindi": {
         "news": "ताज़ा खबर", "analysis": "विश्लेषण", "clip": "मूल वीडियो", "breaking": "ब्रेकिंग न्यूज़",
         "facts": "पक्के तथ्य", "quote": "बयान", "timeline": "टाइमलाइन", "numbers": "आँकड़ों में",
-        "ledger": "क्या पक्का, क्या नहीं",
+        "ledger": "क्या पक्का, क्या नहीं", "sources_title": "रिपोर्ट्स क्या कहती हैं",
         "ticker": "सुर्खियाँ", "source": "स्रोत", "thumb_tag": "ताज़ा खबर",
         "intro_tag": "भारतीय राजनीति, सीधी और साफ़ बात",
         "outro_title": "चैनल को सब्सक्राइब करें", "outro_sub": "रोज़ ताज़ा राजनीतिक खबरें",

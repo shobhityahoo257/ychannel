@@ -293,3 +293,34 @@ def test_photo_finder_shows_candidates_then_uses_only_approved_ones(client, monk
     assert j2["status"] == "done", j2["error"]
     desc = c.get("/api/videos").get_json()["videos"][0]["description"]
     assert "A. Photographer / Wikimedia Commons (CC BY 4.0)" in desc
+
+
+def test_page_photos_endpoint_enforces_rights(client, monkeypatch):
+    import re
+    import test_pagephotos as TP
+    import test_scout as TS
+    from newschannel import pagephotos, scout as scout_mod
+    c, tmp = client
+    for name in ("wikimedia", "openverse", "pexels", "pixabay"):
+        monkeypatch.setitem(scout_mod.PROVIDERS, name, lambda q, n, sa, w: [])
+    monkeypatch.setattr(scout_mod, "fetch_bytes", lambda url: TS.jpg(abs(hash(url)) % 90 + 2, 1600, 900))
+    fc = FakeClient({"plan_photos": {"needs": [{"label": "MSP hike", "kind": "event", "queries": ["msp"]}]}, "rate_photos": TS.rate_answer({})})
+    monkeypatch.setattr(webui, "make_client", lambda cfg, required=True: fc)
+    sid = c.post("/api/scout", json={"headline": "MSP hike"}).get_json()
+    wait(c, sid["job"])
+    sid = sid["sid"]
+    assert c.post(f"/api/scout/{sid}/page", json={"url": "http://127.0.0.1:8000/secret"}).status_code == 400    # never fetches local addresses
+    assert c.post(f"/api/scout/{sid}/page", json={"url": "not a url"}).status_code == 400
+    monkeypatch.setattr(pagephotos, "public_url", lambda u, *a: True)
+    monkeypatch.setattr(pagephotos, "fetch_html", lambda u: TP.ARTICLE)
+    res = c.post(f"/api/scout/{sid}/page", json={"url": "https://www.thedaily.example/news/1"})
+    assert res.status_code == 200
+    cands = res.get_json()["candidates"]
+    unknown = [x["id"] for x in cands if x["rights"] == "unknown"]
+    licensed = [x["id"] for x in cands if x["rights"] == "licensed"]
+    assert unknown and licensed
+    refused = c.post(f"/api/scout/{sid}/approve", json={"ids": unknown, "confirm_official": True}).get_json()
+    assert refused["photos"] == [] and len(refused["skipped"]) == len(unknown)                                  # server refuses, even when told to import
+    ok = c.post(f"/api/scout/{sid}/approve", json={"ids": licensed}).get_json()
+    assert len(ok["photos"]) == len(licensed) and ok["photos"][0]["license"] == "CC BY 4.0"
+    assert "Priya Rao" in ok["photos"][0]["credit"]

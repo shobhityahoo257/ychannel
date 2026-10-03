@@ -22,6 +22,7 @@ from .config import ROOT, Config
 from .llm import make_client
 from .library import Library
 from . import analysis as analysis_mod
+from . import pagephotos
 from . import scout as scout_mod
 from .models import Topic
 from .pipeline import manual_topic, produce
@@ -451,15 +452,32 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         return jsonify(scout_mod.search_more(c, make_client(c, required=False), scout_dir(sid), q, body.get("need_id"),
                                              log=lambda m: None))
 
+    @app.post("/api/scout/<sid>/page")
+    def scout_page(sid: str):
+        """Look for photos on a web page you give. Rights are labelled; only licensed / official ones can be used."""
+        body = request.get_json(force=True) or {}
+        url = (body.get("url") or "").strip()
+        c = cfg()
+        try:
+            return jsonify(pagephotos.add_page(c, make_client(c, required=False), scout_dir(sid), url, body.get("need_id"),
+                                               log=lambda m: None))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Could not read that page ({type(exc).__name__})."}), 502
+
     @app.post("/api/scout/<sid>/approve")
     def scout_approve(sid: str):
-        ids = [i for i in ((request.get_json(force=True) or {}).get("ids") or []) if isinstance(i, str) and i.isalnum()]
+        body = request.get_json(force=True) or {}
+        ids = [i for i in (body.get("ids") or []) if isinstance(i, str) and i.isalnum()]
         if not ids:
             return jsonify({"error": "Select at least one photo."}), 400
         c = cfg()
         lib = library()
-        entries = scout_mod.approve(scout_dir(sid), ids, lib, c["images"]["min_side_px"], log=lambda m: None)
-        return jsonify({"photos": [entry_json(e) for e in entries], "requested": len(ids)})
+        skipped: list[dict[str, str]] = []
+        entries = scout_mod.approve(scout_dir(sid), ids, lib, c["images"]["min_side_px"], log=lambda m: None,
+                                    confirm_official=bool(body.get("confirm_official")), skipped=skipped)
+        return jsonify({"photos": [entry_json(e) for e in entries], "requested": len(ids), "skipped": skipped})
 
     @app.get("/api/scout/<sid>/thumb/<name>")
     def scout_thumb(sid: str, name: str):

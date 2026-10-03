@@ -60,6 +60,14 @@ In the Create and Deep analysis tabs, click **Find relevant free photos online**
    `images.stock_mode: auto_strict` (only photos rated 8/10 or better) or `off`. CLI: `python -m newschannel scout --headline "..." --add-top 4`.
 Licences vary by photo - the tool records what each source states; for anything sensitive, open the source link and check.
 
+**Photos from a news article or any page you choose.** Paste a link in the photo finder. Seeing a photo on a news site does not make it free to use
+(most are owned by the photographer or agency, and copyright claims can block earnings or strike the channel), so each photo found on the page is labelled:
+*licensed* (the page states CC BY / CC0 / public domain - usable, credit added), *official* (a Government of India site such as PIB: their standard policy
+generally allows free reuse with source credit and no misleading context, except third-party material - you confirm before use), *rights not stated* or
+*licence not allowed* (shown for reference only; the server refuses to import them even if asked). For those, **Ask permission** gives you a ready message
+for the photographer or outlet; use the photo only after they agree in writing. Deep-analysis videos can also show a **sources card** (outlet names and
+headlines behind a claim) instead of article photos. Local and private-network addresses are never fetched.
+
 ## Using your own images
 * Drop photos in `inbox/` (used for any story) or `inbox/<topic-slug>/` (one story), or pass `--images folder`.
 * Optional `captions.txt` in the folder: `filename.jpg: what the photo shows` — helps the AI match photos to lines.
