@@ -472,3 +472,16 @@ def test_lessons_are_learned_per_channel(cfg, tmp_path):
     assert "explainer hook" in learn.prompt_hint(store, "explainer") and "news hook" not in learn.prompt_hint(store, "explainer")
     assert "news hook" in learn.prompt_hint(store, "") and "explainer hook" not in learn.prompt_hint(store, "")
     assert learn.insights(store)["total"] == 10                                                # no style = everything (the Settings page)
+
+
+def test_a_model_answer_with_null_fields_does_not_crash_research():
+    src = Source("S1", "https://www.federalreserve.gov/a", "Fed", "federalreserve.gov", 1, "", IMF)
+    ans = {"claims": [
+        {"text": "Central banks raise interest rates to slow inflation.", "kind": "fact", "speaker": None, "quote": None, "date": None,
+         "evidence": sentence(IMF, "Central banks")},
+        {"text": None, "evidence": "x"}, {"text": "No evidence", "evidence": None}, "junk",
+        {"text": "Higher policy rates make borrowing more expensive for households and firms.", "kind": None,
+         "evidence": sentence(IMF, "Higher policy rates")}]}
+    led = deep.build_ledger(FakeClient({"submit_claims": ans, "group_claims": {"groups": []}}), "m", "t", [src], "", lambda *_: None,
+                            "explainer")
+    assert len(led.claims) == 2 and all(c.status == "confirmed" for c in led.claims)

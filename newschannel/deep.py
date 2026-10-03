@@ -107,9 +107,14 @@ def build_ledger(client: Any, model: str, topic: str, sources: list[Source], as_
             continue
         kept = 0
         for it in items:
-            c = Claim(id=f"X{len(raw) + 1}", text=it["text"].strip(), kind=it.get("kind", "fact"),
-                      speaker=it.get("speaker", "").strip(), quote=it.get("quote", "").strip(),
-                      evidence=it["evidence"].strip(), date=it.get("date", "").strip(), source_ids=[s.id])
+            if not isinstance(it, dict):
+                continue
+            field = lambda k: str(it.get(k) or "").strip()      # the model may send null for optional fields  # noqa: E731
+            if not field("text") or not field("evidence"):
+                continue
+            c = Claim(id=f"X{len(raw) + 1}", text=field("text"), kind=field("kind") or "fact",
+                      speaker=field("speaker"), quote=field("quote"),
+                      evidence=field("evidence"), date=field("date"), source_ids=[s.id])
             why = verify_claim(c, s.text)
             if why:
                 log(f"[deep] dropped a claim ({why}): {c.text[:70]}")
