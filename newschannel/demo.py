@@ -83,7 +83,7 @@ def run(cfg: Config, fmt: str = "short", out_dir: Path | None = None) -> str:
     inbox.mkdir()
     for i, (w, h) in enumerate([(1600, 1000), (1000, 1500), (1800, 900)]):
         _photo(inbox / f"sample_{i}.jpg", w, h, i)
-    cfg.data["images"].update(inbox_dir=str(inbox), use_stock_fallback=False)
+    cfg.data["images"].update(inbox_dir=str(inbox), stock_mode="off")
     cfg.data["tts"]["provider"] = "mock"
     store = Store(out_dir or work / "out")
     meta = produce(cfg, manual_topic("Demo", "Demo"), fmt, _Canned(cfg.lang), MockTTS(), store, preset="veryfast")

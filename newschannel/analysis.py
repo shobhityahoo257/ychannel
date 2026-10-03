@@ -65,7 +65,8 @@ def load_research(store: Store, rid: str) -> tuple[Ledger, dict[str, Any]]:
 def make_video(cfg: Config, client: Any, tts: Any, store: Store, rid: str, stance: str = "auto",
                minutes: float | str = "auto", language: str | None = None, music: str | None = None,
                extra_images: list[Path] | None = None, library_ids: list[str] | None = None,
-               preset: str | None = None, log: Callable[[str], None] = print) -> dict[str, Any]:
+               preset: str | None = None, log: Callable[[str], None] = print,
+               approved_only: bool = False) -> dict[str, Any]:
     ledger, rec = load_research(store, rid)
     if len(ledger.usable()) < MIN_USABLE_CLAIMS:
         raise NotEnoughMaterial(f"Only {len(ledger.usable())} verified claims; need {MIN_USABLE_CLAIMS}+. Add more sources.")
@@ -86,4 +87,4 @@ def make_video(cfg: Config, client: Any, tts: Any, store: Store, rid: str, stanc
     return produce(cfg, ledger_topic(ledger), "analysis", client, tts, store, extra_images, preset, log,
                    library_ids=library_ids, language=lang, script=w.script, ledger=ledger,
                    target_seconds=int(mins * 60), music=music, deep_check=(w.violations, w.warnings),
-                   as_of=ledger.as_of)
+                   as_of=ledger.as_of, approved_only=approved_only)

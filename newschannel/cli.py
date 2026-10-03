@@ -204,6 +204,28 @@ def cmd_deep(cfg: Config, a) -> int:
     return 0
 
 
+def cmd_scout(cfg: Config, a) -> int:
+    from . import scout
+    from .library import Library
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    folder = store.root / "_scout" / __import__("uuid").uuid4().hex[:10]
+    story = (a.headline + "\n" + (a.text or "")).strip()
+    res = scout.scout(cfg, _client(cfg, required=False), story, extra_queries=a.query or [], folder=folder)
+    print("\nSources:", "; ".join(f"{k}: {v}" for k, v in res["providers"].items()))
+    for n in res["needs"]:
+        print(f"\n[{n['kind']}] {n['label']}")
+        for c in [c for c in res["candidates"] if c["need"] == n["id"]]:
+            star = "*" if c["recommended"] else " "
+            print(f" {star} {c['score']:>4.1f}  {c['id']}  {c['title'][:60]}  | {c['license']} | {c['page_url']}")
+    if a.add_top:
+        top = [c["id"] for c in sorted((c for c in res["candidates"] if c["recommended"]), key=lambda c: -c["score"])][:a.add_top]
+        entries = scout.approve(folder, top, Library(cfg.path(cfg["images"].get("library_dir", "library"))), cfg["images"]["min_side_px"])
+        print(f"\nAdded {len(entries)} photo(s) to your library (credits and licenses saved).")
+    else:
+        print(f"\n(* = recommended.) Add some to your library with --add-top N, or approve them in the web app.")
+    return 0
+
+
 def cmd_schedule(cfg: Config, a) -> int:
     from .scheduler import run_forever
     run_forever(cfg)
@@ -256,11 +278,14 @@ def main(argv: list[str] | None = None) -> int:
     dp.add_argument("--minutes", default="auto", help="number of minutes, or auto")
     dp.add_argument("--language", choices=["hinglish", "hindi"]); dp.add_argument("--music", choices=["auto", "calm", "tension", "warm", "off"])
     dp.add_argument("--images", nargs="*"); dp.add_argument("--research-only", action="store_true")
+    sc = sub.add_parser("scout", help="find relevant copyright-safe photos for a story")
+    sc.add_argument("--headline", required=True); sc.add_argument("--text"); sc.add_argument("--query", action="append")
+    sc.add_argument("--add-top", type=int, default=0, help="add the N best recommended photos to your library")
     sub.add_parser("schedule", help="run unattended: produce, collect approvals and publish at set times")
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
     return {"ui": cmd_ui, "doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
-            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "study": cmd_study, "deep": cmd_deep, "breaking": cmd_breaking, "playlists": cmd_playlists, "endscreen": cmd_endscreen}[a.cmd](cfg, a)
+            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "study": cmd_study, "scout": cmd_scout, "deep": cmd_deep, "breaking": cmd_breaking, "playlists": cmd_playlists, "endscreen": cmd_endscreen}[a.cmd](cfg, a)
 
 
 if __name__ == "__main__":

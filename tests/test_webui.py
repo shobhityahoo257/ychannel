@@ -18,7 +18,7 @@ def client(tmp_path, monkeypatch):
     data = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
     data["tts"]["provider"] = "mock"
     data["content"]["language"] = "hindi"
-    data["images"].update(inbox_dir=str(tmp_path / "inbox"), use_stock_fallback=False,
+    data["images"].update(inbox_dir=str(tmp_path / "inbox"), stock_mode="off",
                           library_dir=str(tmp_path / "library"))
     data["youtube"]["output_dir"] = str(tmp_path / "out")
     data["audio"]["music_dir"] = str(tmp_path / "nomusic")
@@ -251,3 +251,45 @@ def test_deep_analysis_flow_through_the_api(client, monkeypatch):
     led_json = c.get(f"/api/videos/{v['id']}/ledger").get_json()
     assert led_json["analysis"]["counts"]["confirmed"] >= 2 and led_json["ledger"]["claims"]
     assert c.get("/api/videos/20200101-nothing-short/ledger").status_code == 404
+
+
+def test_photo_finder_shows_candidates_then_uses_only_approved_ones(client, monkeypatch):
+    import re
+    import test_scout as TS
+    from newschannel import scout as scout_mod
+    c, tmp = client
+    monkeypatch.setitem(scout_mod.PROVIDERS, "wikimedia", lambda q, n, sa, w: [
+        TS.cand(1, title="Parliament House New Delhi"), TS.cand(2, title="Parliament night view")]
+        if "lok" not in q else [TS.cand(1), TS.cand(9, title="Lok Sabha hall")])
+    monkeypatch.setitem(scout_mod.PROVIDERS, "openverse", lambda q, n, sa, w: [])
+    monkeypatch.setitem(scout_mod.PROVIDERS, "pexels", lambda q, n, sa, w: [])
+    monkeypatch.setitem(scout_mod.PROVIDERS, "pixabay", lambda q, n, sa, w: [])
+    monkeypatch.setattr(scout_mod, "fetch_bytes", lambda url: TS.jpg(int(re.search(r"/(\d+)", url).group(1)), 1600, 900))
+    fc = FakeClient({"submit_script": SCRIPT, "arrange_photos": lambda kw: {"scenes": []},
+                     "plan_photos": {"needs": [{"label": "Parliament House", "kind": "institution", "queries": ["parliament house"]}]},
+                     "rate_photos": TS.rate_answer({"c1": 9, "c2": 5, "c9": 8})})
+    monkeypatch.setattr(webui, "make_client", lambda cfg, required=True: fc)
+    assert c.post("/api/scout", json={}).status_code == 400
+    r = c.post("/api/scout", json={"headline": "Budget debate in Parliament", "text": "The debate was heated."}).get_json()
+    j = wait(c, r["job"])
+    assert j["status"] == "done", j["error"]
+    res = j["result"]
+    assert res["sid"] == r["sid"] and [x["id"] for x in res["candidates"]] == ["c1", "c2"]
+    assert res["candidates"][0]["recommended"] and not res["candidates"][1]["recommended"]
+    assert c.get(f"/api/scout/{r['sid']}/thumb/c1.jpg").status_code == 200
+    assert c.get(f"/api/scout/{r['sid']}/thumb/..%2Fcandidates.json").status_code == 404
+    assert c.get("/api/scout/nope/thumb/c1.jpg").status_code == 404
+    more = c.post(f"/api/scout/{r['sid']}/search", json={"query": "lok sabha", "need_id": "n1"}).get_json()
+    assert [x["id"] for x in more["candidates"]] == ["c1", "c2", "c9"]
+    assert c.post(f"/api/scout/{r['sid']}/search", json={"query": " "}).status_code == 400
+    assert c.post(f"/api/scout/{r['sid']}/approve", json={"ids": []}).status_code == 400
+    ok = c.post(f"/api/scout/{r['sid']}/approve", json={"ids": ["c1", "c9"]}).get_json()
+    assert len(ok["photos"]) == 2 and ok["photos"][0]["license"] == "CC BY 4.0" and "Wikimedia Commons" in ok["photos"][0]["credit"]
+    assert len(c.get("/api/library?source=stock").get_json()["photos"]) == 2           # approved photos are in the library
+    # the video uses exactly the approved photos and never goes online by itself
+    monkeypatch.setattr(scout_mod, "scout", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no automatic search")))
+    data = {"headline": "बहस", "text": "तथ्य", "format": "short", "library_ids": json.dumps([p["id"] for p in ok["photos"]])}
+    j2 = wait(c, c.post("/api/create", data=data, content_type="multipart/form-data").get_json()["job"])
+    assert j2["status"] == "done", j2["error"]
+    desc = c.get("/api/videos").get_json()["videos"][0]["description"]
+    assert "A. Photographer / Wikimedia Commons (CC BY 4.0)" in desc

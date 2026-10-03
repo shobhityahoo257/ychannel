@@ -81,6 +81,13 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
 .chips span{display:flex;align-items:center;gap:6px;background:var(--chip);border-radius:99px;padding:3px 4px 3px 3px;font-size:12px}
 .chips img{width:28px;height:28px;border-radius:50%;object-fit:cover}
 .chips button{border:0;background:none;color:var(--mute);cursor:pointer}
+.sc .cap{height:auto;min-height:3.2em}.sc .cap b{display:block;color:var(--ink);font-size:11.5px;font-weight:600;line-height:1.25;max-height:2.5em;overflow:hidden}
+.sc .cap i{display:block;margin-top:2px;font-size:10.5px}.sc .meta{padding:0 6px 6px;font-size:11px}
+.score{position:absolute;top:6px;right:6px;font-size:11px;font-weight:700;color:#fff;padding:1px 7px;border-radius:9px;background:#667085}
+.score.hi{background:var(--ok)}.score.mid{background:var(--warn)}
+.need{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.need h3{margin:0 0 2px;font-size:15px}
+.sticky{position:sticky;top:-4vh;background:var(--card);padding:6px 0 10px;z-index:3}
 </style>
 </head>
 <body>
@@ -138,10 +145,11 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
 
   <div class="card">
     <h2>3. Your photos (optional)</h2>
-    <p class="hint">Add real photos. <b>The AI decides which photo goes where</b> and keeps faces in frame. If you add too few, stock photos fill the gaps (needs a Pexels key).</p>
+    <p class="hint">Add real photos. <b>The AI decides which photo goes where</b> and keeps faces in frame. If you add too few, use the photo finder below. Nothing is ever added automatically.</p>
     <div class="drop" id="imgDrop">📷 Drag photos here or click to choose<input type="file" id="imgInput" accept="image/*" multiple hidden></div>
     <div class="thumbs" id="thumbs"></div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="pickLib">🖼️ Choose from my library</button><span class="hint" style="margin:0">Photos you upload are saved to your library automatically, and the AI may also pick relevant ones from it.</span></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="findPhotos">🔎 Find relevant free photos online</button><button class="btn" id="pickLib">🖼️ Choose from my library</button></div>
+    <p class="hint" style="margin:8px 0 0">The app searches copyright-safe sources (Wikimedia Commons, Openverse, and Pexels/Pixabay if you add their free keys), rates each photo for relevance, and <b>shows them to you first</b>: you approve what to use. Nothing is added to your video automatically. Photos you upload are saved to your library, and the AI may also pick relevant ones from it.</p>
     <div class="chips" id="libChips"></div>
   </div>
 
@@ -251,7 +259,8 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
       <p class="hint">The AI places photos next to the facts they illustrate. Add your own, or pick from your library.</p>
       <div class="drop" id="aImgDrop">📷 Drag photos here or click to choose<input type="file" id="aImgInput" accept="image/*" multiple hidden></div>
       <div class="thumbs" id="aThumbs"></div>
-      <div class="row" style="margin-top:10px"><button class="btn" id="aPickLib">🖼️ Choose from my library</button></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="aFindPhotos">🔎 Find relevant free photos online</button><button class="btn" id="aPickLib">🖼️ Choose from my library</button></div>
+      <p class="hint" style="margin:8px 0 0">Photos are searched from the fact ledger's subjects and shown to you for approval before the video is made.</p>
       <div class="chips" id="aLibChips"></div>
     </div>
 
@@ -324,7 +333,8 @@ const KEYS = [
  ['ANTHROPIC_API_KEY','Anthropic (Claude) key','optional: alternative for the script'],
  ['ELEVENLABS_API_KEY','ElevenLabs API key','optional: more natural Hindi voice'],
  ['ELEVENLABS_VOICE_ID','ElevenLabs voice ID','required if you use ElevenLabs'],
- ['PEXELS_API_KEY','Pexels API key','optional, free: stock photos'],
+ ['PEXELS_API_KEY','Pexels API key','optional, free: more photo sources for the photo finder'],
+ ['PIXABAY_API_KEY','Pixabay API key','optional, free: more photo sources for the photo finder'],
  ['TELEGRAM_BOT_TOKEN','Telegram bot token','optional: approve videos from your phone'],
  ['TELEGRAM_CHAT_ID','Telegram chat ID','optional'],
 ];
@@ -387,7 +397,7 @@ function editPhoto(p){
     <label class="l">Description (used to find this photo for stories)</label><textarea id="eCap" style="min-height:70px">${esc(p.caption)}</textarea>
     <label class="l">Tags (comma separated)</label><input type="text" id="eTags" value="${esc(p.tags.join(', '))}">
     <label class="l">Credit (shown in the video description, e.g. "Photo: PIB")</label><input type="text" id="eCredit" value="${esc(p.credit)}">
-    <div class="hint">Used in ${p.used} video(s) · ${p.w}×${p.h} · ${p.source==='stock'?'stock':'yours'}</div>
+    <div class="hint">Used in ${p.used} video(s) · ${p.w}×${p.h} · ${p.source==='stock'?'found online':'yours'}${p.license?' · '+esc(p.license):''}${p.page_url?` · <a href="${esc(p.page_url)}" target="_blank" rel="noopener">source ↗</a>`:''}</div>
     <div class="row" style="margin-top:12px"><button class="btn primary" id="eSave">Save</button><button class="btn bad" id="eDel" style="margin-left:auto">Delete photo</button></div>`;
   $('#modal').classList.add('on'); $('#eClose').onclick=closeModal;
   $('#eSave').onclick=async()=>{ await api('/api/library/'+p.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({caption:$('#eCap').value,tags:$('#eTags').value,credit:$('#eCredit').value})}); closeModal(); toast('Saved'); loadLibrary() };
@@ -427,6 +437,7 @@ async function startJob(demo){
   if(demo) fd.append('demo','1');
   else if(mode==='auto'){ if(!topicId) return toast('Pick a story first'); fd.append('topic_id',topicId) }
   else { if(!$('#headline').value.trim()) return toast('Write a headline first'); fd.append('headline',$('#headline').value); fd.append('text',$('#text').value) }
+  if(!demo && !images.length && !libSel.length && !confirm('You have not chosen any photos. The video will use plain headline cards instead of photos.\n\nPress Cancel to find relevant photos first, or OK to continue without photos.')) return;
   if(!demo){ images.forEach(f=>fd.append('images',f)); fd.append('library_ids',JSON.stringify(libSel.map(x=>x.id)));
     for(const c of clips){ if(!c.credit.trim()) return toast('Every clip needs a Source'); fd.append('clips',c.file) }
     fd.append('clip_meta',JSON.stringify(clips.map(({start,end,credit,note})=>({start,end,credit,note})))) }
@@ -578,6 +589,7 @@ function renderALibChips(){ $('#aLibChips').innerHTML=aLibSel.map((p,i)=>`<span>
 $('#aPickLib').onclick=()=>openLibPicker(aLibSel, renderALibChips);
 $('#aCreate').onclick=async()=>{
   if(!aResearch||!aResearch.enough) return toast('Run the research first');
+  if(!aImages.length && !aLibSel.length && !confirm('You have not chosen any photos. The video will use plain headline cards instead of photos.\n\nPress Cancel to find relevant photos first, or OK to continue without photos.')) return;
   const fd=new FormData(); fd.append('research_id',aResearch.research_id); fd.append('stance',$('input[name=astance]:checked').value); fd.append('minutes',$('input[name=alen]:checked').value);
   fd.append('language',$('input[name=alang]:checked').value); fd.append('music',$('#aMusic').value); aImages.forEach(f=>fd.append('images',f)); fd.append('library_ids',JSON.stringify(aLibSel.map(x=>x.id)));
   $('#aCreate').disabled=true; $('#aProg2').classList.remove('hide'); $('#aDone').classList.add('hide'); $('#aP2Title').textContent='Creating your analysis video...'; $('#aP2Bar').style.width='3%'; $('#aP2Log').textContent=''; $('#aP2Step').textContent='Uploading...';
@@ -592,6 +604,53 @@ $('#aCreate').onclick=async()=>{
 async function loadVideoLedger(v,el){ const box=el.querySelector('.ledbody');
   try{ const r=await api(`/api/videos/${v.id}/ledger`); renderLedger(r.ledger, box); const a=r.analysis||{};
     box.insertAdjacentHTML('afterbegin',`<div class="hint" style="margin:0 0 8px">Angle: <b>${esc(a.stance||'')}</b> · as of ${esc(a.as_of||'')} · every fact in the script is tied to one of these claims.</div>`) }catch(e){ box.textContent=e.message } }
+
+// ---- photo finder (find relevant copyright-safe photos, user approves them)
+const SCOUT_STEPS=[['rating photos','⭐ Rating how well each photo fits'],['searching','🔎 Searching free photo archives'],['planning photo needs','🧠 Working out which visuals the story needs']];
+let scoutCtx=null;
+function scoreClass(x){ return x>=7?'hi':x>=5?'mid':'' }
+function scoutCard(c,sid,sel){
+  return `<div class="p sc ${sel?'sel':''}" data-id="${c.id}"><img loading="lazy" src="/api/scout/${sid}/thumb/${c.id}.jpg"><div class="tick">✓</div>
+    <div class="score ${scoreClass(c.score)}">${Math.round(c.score)}/10</div>
+    <div class="cap"><b>${esc(c.title)}</b><span>${esc(c.creator)} · ${({wikimedia:'Wikimedia Commons',openverse:'Openverse',pexels:'Pexels',pixabay:'Pixabay'})[c.provider]||esc(c.provider)}</span><i>${esc(c.reason)}</i></div>
+    <div class="meta"><span class="pill ok">${esc(c.license)}</span> ${(c.provider==='pexels'||c.provider==='pixabay')?'<span class="pill warn" title="Generic stock photo, not from the actual event">stock</span> ':''}<a href="${esc(c.page_url)}" target="_blank" rel="noopener">source ↗</a></div></div>`
+}
+function renderScout(){
+  const r=scoutCtx.session, sid=scoutCtx.sid, sel=scoutCtx.sel;
+  const prov=Object.entries(r.providers).map(([k,v])=>`${({wikimedia:'Wikimedia Commons',openverse:'Openverse',pexels:'Pexels',pixabay:'Pixabay'})[k]||k}: ${esc(v)}`).join(' · ');
+  const blocks=r.needs.map(n=>{ const cs=r.candidates.filter(c=>c.need===n.id);
+    return `<div class="need"><h3>${esc(n.label)} <span class="pill">${esc(n.kind)}</span></h3>
+      <div class="row" style="margin:6px 0"><input type="text" data-need="${n.id}" placeholder="Search this subject with other words..." style="flex:1;min-width:160px;padding:8px 10px"><button class="btn" data-search="${n.id}">Search</button></div>
+      ${cs.length?`<div class="lib">${cs.map(c=>scoutCard(c,sid,sel.has(c.id))).join('')}</div>`:'<div class="hint">No suitable free photo found for this. Try other words above, or upload your own.</div>'}</div>` }).join('');
+  $('#scoutBody').innerHTML=`<div class="hint" style="margin:0 0 6px">${prov}</div>
+    <div class="row"><input type="text" id="scoutExtra" placeholder="Search for something else (e.g. a place or event name)..." style="flex:1;min-width:200px"><button class="btn" id="scoutExtraGo">Search</button></div>${blocks}`;
+  $$('#scoutBody .sc').forEach(el=>el.onclick=e=>{ if(e.target.tagName==='A') return; const id=el.dataset.id; if(sel.has(id)){sel.delete(id);el.classList.remove('sel')}else{sel.add(id);el.classList.add('sel')} updateScoutBtn() });
+  const search=async(q,needId)=>{ if(!q.trim()) return; toast('Searching...'); try{ scoutCtx.session=await api(`/api/scout/${sid}/search`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,need_id:needId})}); renderScout() }catch(e){ toast('❌ '+e.message) } };
+  $$('#scoutBody [data-search]').forEach(b=>b.onclick=()=>search($(`#scoutBody [data-need="${b.dataset.search}"]`).value,b.dataset.search));
+  $('#scoutExtraGo').onclick=()=>search($('#scoutExtra').value,null);
+  updateScoutBtn();
+}
+function updateScoutBtn(){ const n=scoutCtx.sel.size; const b=$('#scoutUse'); b.textContent=n?`Use ${n} selected photo${n>1?'s':''}`:'Select photos to use'; b.disabled=!n }
+async function openScout(kind){
+  const body={};
+  if(kind==='create'){ const mode=$('input[name=mode]:checked').value;
+    if(mode==='auto'){ if(!topicId) return toast('Pick a story first'); body.topic_id=topicId }
+    else { if(!$('#headline').value.trim()) return toast('Write the headline first'); body.headline=$('#headline').value; body.text=$('#text').value } }
+  else { if(!aResearch) return toast('Run the research first'); body.research_id=aResearch.research_id }
+  scoutCtx={kind,sel:new Set(),session:null,sid:null};
+  $('#modalBox').innerHTML=`<div class="sticky"><div class="row"><b style="font-size:17px">Relevant free photos</b><button class="btn" id="scoutClose" style="margin-left:auto">Cancel</button><button class="btn primary" id="scoutUse" disabled>Select photos to use</button></div>
+    <p class="hint" style="margin:6px 0 0">Only photos you tick are used. Every photo is free to use commercially; credits are added to the video description automatically. Pre-ticked photos are the ones rated 7/10 or better.</p></div>
+    <div id="scoutProg"><p class="hint" id="scoutStep">Starting...</p><div class="bar"><i id="scoutBar"></i></div><pre class="log" id="scoutLog"></pre></div><div id="scoutBody"></div>`;
+  $('#modal').classList.add('on'); $('#scoutClose').onclick=closeModal;
+  $('#scoutUse').onclick=async()=>{ try{ $('#scoutUse').disabled=true; $('#scoutUse').textContent='Importing...';
+      const r=await api(`/api/scout/${scoutCtx.sid}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[...scoutCtx.sel]})});
+      const target=kind==='create'?libSel:aLibSel; r.photos.forEach(p=>{ if(!target.some(x=>x.id===p.id)) target.push({id:p.id,thumb:p.thumb,caption:p.caption}) });
+      kind==='create'?renderLibChips():renderALibChips(); closeModal(); toast(`${r.photos.length} photo${r.photos.length===1?'':'s'} added to this video${r.photos.length<r.requested?` (${r.requested-r.photos.length} could not be imported)`:''}`) }catch(e){ toast('❌ '+e.message); updateScoutBtn() } };
+  try{ const {job,sid}=await api('/api/scout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); scoutCtx.sid=sid;
+    pollJob(job,{bar:$('#scoutBar'),log:$('#scoutLog'),step:$('#scoutStep'),title:$('#scoutStep'),fail:()=>{}},SCOUT_STEPS,j=>{
+      $('#scoutProg').classList.add('hide'); scoutCtx.session=j.result; j.result.candidates.forEach(c=>{ if(c.recommended) scoutCtx.sel.add(c.id) }); renderScout() }) }
+  catch(e){ $('#scoutStep').textContent='❌ '+e.message } }
+$('#findPhotos').onclick=()=>openScout('create'); $('#aFindPhotos').onclick=()=>openScout('analysis');
 
 async function loadBreaking(){
   try{ const b=await api('/api/breaking'); $('#brkPill').textContent=b.running?'On':'Off'; $('#brkPill').className='pill '+(b.running?'ok':''); $('#brkBtn').textContent=b.running?'Stop watching':'Start watching';

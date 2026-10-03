@@ -22,18 +22,20 @@ from .config import ROOT, Config
 from .llm import make_client
 from .library import Library
 from . import analysis as analysis_mod
+from . import scout as scout_mod
 from .models import Topic
 from .pipeline import manual_topic, produce
 from .review import Store
 from .tts import make_tts
 
 KEY_NAMES = ["OPENAI_API_KEY", "OPENAI_VOICE", "ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY",
-             "ELEVENLABS_VOICE_ID", "PEXELS_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
+             "ELEVENLABS_VOICE_ID", "PEXELS_API_KEY", "PIXABAY_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 VID_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
 STEPS = ["clips", "writing script", "synthesizing voice", "user images", "choosing and arranging",
          "rendering"]
 RESEARCH_STEPS = ["fetching sources", "extracting claims", "cross-checking", "deciding angle"]
+SCOUT_STEPS = ["planning photo needs", "searching", "rating photos"]
 ANALYSIS_STEPS = ["writing the", "polishing", "synthesizing voice", "choosing and arranging", "rendering"]
 
 
@@ -219,6 +221,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
     def entry_json(e) -> dict[str, Any]:
         return {"id": e.id, "caption": e.caption, "tags": e.tags, "credit": e.credit, "source": e.source,
                 "used": e.used, "added": e.added, "w": e.width, "h": e.height, "ai_tagged": e.ai_tagged,
+                "license": e.license, "page_url": e.page_url,
                 "thumb": f"/library/thumbs/{e.id}.jpg", "full": f"/library/images/{e.id}.jpg"}
 
     def ai_available() -> bool:
@@ -332,7 +335,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 else:
                     meta = produce(c, topic, fmt, make_client(c), make_tts(c), store(),
                                    [img_dir], log=job.log, clip_folders=[clip_dir] if clip_dir else None,
-                                   library_ids=library_ids, language=language)
+                                   library_ids=library_ids, language=language, approved_only=True)
                 job.result = {"id": meta["id"], "title": meta["title"], "issues": meta["issues"]}
                 job.status = "done"
             except Exception as exc:
@@ -385,6 +388,85 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         threading.Thread(target=run_job, args=(job, topic, fmt, img_dir, clip_dir if spec else None, demo, lib_ids, language),
                          daemon=True).start()
         return jsonify({"job": job.id})
+
+    # ----- photo scout: find relevant copyright-safe photos and let the user approve them BEFORE the video is made
+    def scout_dir(sid: str) -> Path:
+        if not sid.isalnum():
+            abort(404)
+        d = store().root / "_scout" / sid
+        if not (d / "candidates.json").exists():
+            abort(404)
+        return d
+
+    @app.post("/api/scout")
+    def scout_start():
+        body = request.get_json(force=True) or {}
+        story, hints = "", []
+        try:
+            if body.get("research_id"):
+                rid = str(body["research_id"])
+                if not rid.isalnum():
+                    abort(404)
+                led, _ = analysis_mod.load_research(store(), rid)
+                from . import deep as deep_mod
+                story = f"{led.topic}\n" + deep_mod.ledger_brief(led)
+            elif body.get("topic_id") and topics.get(body["topic_id"]):
+                t = topics[body["topic_id"]]
+                story = t.title + "\n" + "\n".join(f"{x.title}. {x.summary}" for x in t.stories[:5])
+            else:
+                story = ((body.get("headline") or "").strip() + "\n" + (body.get("text") or "").strip()).strip()
+        except OSError:
+            return jsonify({"error": "Research not found. Run the research step again."}), 400
+        if not story:
+            return jsonify({"error": "Write the headline (or pick a story) first so the app knows what to look for."}), 400
+        extra = [q.strip() for q in (body.get("queries") or []) if isinstance(q, str) and q.strip()][:5]
+        sid = uuid.uuid4().hex[:10]
+        job = Job(story.splitlines()[0][:80], SCOUT_STEPS)
+        jobs[job.id] = job
+
+        def work():
+            job.status = "running"
+            try:
+                c = cfg()
+                job.result = scout_mod.scout(c, make_client(c, required=False), story, hints, extra,
+                                             folder=store().root / "_scout" / sid, log=job.log)
+                job.status = "done"
+            except Exception as exc:
+                job.status, job.error = "error", f"{type(exc).__name__}: {exc}"
+
+        threading.Thread(target=work, daemon=True).start()
+        return jsonify({"job": job.id, "sid": sid})
+
+    @app.get("/api/scout/<sid>")
+    def scout_get(sid: str):
+        return jsonify(scout_mod.load_session(scout_dir(sid)))
+
+    @app.post("/api/scout/<sid>/search")
+    def scout_search(sid: str):
+        body = request.get_json(force=True) or {}
+        q = (body.get("query") or "").strip()
+        if not q:
+            return jsonify({"error": "Type what to search for."}), 400
+        c = cfg()
+        return jsonify(scout_mod.search_more(c, make_client(c, required=False), scout_dir(sid), q, body.get("need_id"),
+                                             log=lambda m: None))
+
+    @app.post("/api/scout/<sid>/approve")
+    def scout_approve(sid: str):
+        ids = [i for i in ((request.get_json(force=True) or {}).get("ids") or []) if isinstance(i, str) and i.isalnum()]
+        if not ids:
+            return jsonify({"error": "Select at least one photo."}), 400
+        c = cfg()
+        lib = library()
+        entries = scout_mod.approve(scout_dir(sid), ids, lib, c["images"]["min_side_px"], log=lambda m: None)
+        return jsonify({"photos": [entry_json(e) for e in entries], "requested": len(ids)})
+
+    @app.get("/api/scout/<sid>/thumb/<name>")
+    def scout_thumb(sid: str, name: str):
+        p = scout_dir(sid) / "thumbs" / name
+        if not name.endswith(".jpg") or not name[:-4].isalnum() or not p.exists():
+            abort(404)
+        return send_file(p, conditional=True, max_age=3600)
 
     # ----- deep analysis: step 1 research + fact-check, step 2 create
     @app.post("/api/analysis/research")
@@ -470,7 +552,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 try:
                     c = cfg()
                     meta = analysis_mod.make_video(c, make_client(c), make_tts(c), store(), rid, stance, minutes, language,
-                                                   f.get("music") or None, [img_dir], lib_ids, log=job.log)
+                                                   f.get("music") or None, [img_dir], lib_ids, log=job.log, approved_only=True)
                     job.result = {"id": meta["id"], "title": meta["title"], "issues": meta["issues"]}
                     job.status = "done"
                 except Exception as exc:

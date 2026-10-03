@@ -12,6 +12,7 @@ from typing import Any, Callable
 from . import audio as A
 from . import clips as clipmod
 from . import cards, deep, learn
+from . import scout as scout_mod
 from . import music as music_mod
 from .ledger import Ledger
 from .library import Library
@@ -46,7 +47,7 @@ def brand_from(cfg: Config) -> render.Brand:
 def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_seconds: float,
                   extra: list[Path], log: Callable[[str], None], library_ids: list[str] | None = None,
                   client: Any = None, model: str = "", vision_model: str = "",
-                  card_size: tuple[int, int] = (1080, 1920)) -> tuple[list[Asset], list[str]]:
+                  card_size: tuple[int, int] = (1080, 1920), approved_only: bool = False) -> tuple[list[Asset], list[str]]:
     """Order of preference: photos you upload now -> photos you picked from the library ->
     library photos the AI finds relevant -> stock. Returns (assets, library ids used)."""
     img = cfg["images"]
@@ -79,19 +80,23 @@ def gather_assets(cfg: Config, topic: Topic, script: Script, run: Path, total_se
             assets.append(lib.to_asset(e, run / "images"))
             used.append(e.id)
         log(f"after library suggestions: {len(assets)}")
-    if img.get("use_stock_fallback", True) and len(assets) < need:
-        for sc in script.scenes:
-            if len(assets) >= need:
-                break
-            if sc.visual_query:
-                got = media.fetch_stock(sc.visual_query, run / "images", img["min_side_px"], n=2)
-                assets += got
-                if img.get("save_to_library", True):
-                    for a in got:
-                        e, _ = lib.add_file(Path(a.path), a.caption, a.credit, source="stock")
-                        if e:
-                            used.append(e.id)
-        log(f"after stock fallback: {len(assets)}")
+    mode = "approve" if approved_only else img.get("stock_mode", "auto_strict")
+    if mode == "auto_strict" and len(assets) < need:
+        # Unattended runs: only take photos the scout rates as a clear fit (default 8/10 or better). In the web app you
+        # approve photos yourself beforehand, so nothing is ever fetched automatically there.
+        story = f"{topic.title}. " + " ".join(s.summary for s in topic.stories[:3]) + " " + \
+            " ".join(sc.headline for sc in script.scenes)
+        try:
+            res = scout_mod.scout(cfg, client, story, [sc.visual_query for sc in script.scenes if sc.visual_query],
+                                  folder=run / "scout", log=log)
+            top = sorted((c for c in res["candidates"] if c["score"] >= img.get("stock_min_score", 8)),
+                         key=lambda c: -c["score"])[:need - len(assets)]
+            for e in scout_mod.approve(run / "scout", [c["id"] for c in top], lib, img["min_side_px"], log=log):
+                assets.append(lib.to_asset(e, run / "images"))
+                used.append(e.id)
+            log(f"photos found online and rated as a clear fit: {len(top)}")
+        except Exception as exc:
+            log(f"[photos] online search skipped: {exc}")
     if not assets:   # last resort: clean headline cards (clearly graphics, never fake photos)
         brand = brand_from(cfg)
         fmt_w, fmt_h = card_size
@@ -124,7 +129,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
             breaking: bool = False, library_ids: list[str] | None = None,
             language: str | None = None, script: Script | None = None, ledger: Ledger | None = None,
             target_seconds: int | None = None, music: str | None = None,
-            deep_check: tuple[list[str], list[str]] | None = None, as_of: str = "") -> dict[str, Any]:
+            deep_check: tuple[list[str], list[str]] | None = None, as_of: str = "",
+            approved_only: bool = False) -> dict[str, Any]:
     """Make one video. For deep-analysis videos pass a ready `script`, its fact `ledger` and the checker's results."""
     if language:
         cfg.data.setdefault("content", {})["language"] = language
@@ -187,7 +193,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     # 3. pictures: user images first, stock fallback, AI picks + arranges
     clip_total = sum(a.duration for a, sc in zip(audios, script.scenes) if sc.kind == "clip")
     assets, lib_used = gather_assets(cfg, topic, script, run, total - clip_total, extra_images or [], log,
-                                     library_ids, client, model, vision_model, (fmt.width, fmt.height))
+                                     library_ids, client, model, vision_model, (fmt.width, fmt.height), approved_only)
     by_id = {a.id: a for a in assets}
     log("choosing and arranging photos…")
     plan = planner.make_plan(client, vision_model, script.scenes, assets,
@@ -288,6 +294,8 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
 
     # 6. description, policy gate, meta
     credits = sorted({a.credit for a in assets if a.credit})
+    if any(("pexels" in c.lower() or "pixabay" in c.lower()) for c in credits):
+        credits.append(label(lang, "d_stock_note"))
     if ledger is not None:
         desc = deep.build_description(script, ledger, starts, intro, credits, cfg["channel"], lang, as_of,
                                       cfg["youtube"].get("contains_synthetic_media", True))

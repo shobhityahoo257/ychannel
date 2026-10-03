@@ -42,6 +42,8 @@ class Entry:
     used: int = 0
     last_used: float = 0.0
     ai_tagged: bool = False
+    license: str = ""         # e.g. "CC BY 4.0", "CC0 / Public domain"
+    page_url: str = ""        # where the photo came from (for credit and checking)
 
 
 def ahash(im: Image.Image) -> str:
@@ -97,7 +99,8 @@ class Library:
 
     # ---------------------------------------------------------------- adding
     def add_file(self, src: Path, caption: str = "", credit: str = "", source: str = "user",
-                 tags: list[str] | None = None, min_side: int = 0) -> tuple[Entry | None, bool]:
+                 tags: list[str] | None = None, min_side: int = 0, license: str = "",
+                 page_url: str = "") -> tuple[Entry | None, bool]:
         """Add a photo. Returns (entry, is_new). A near-duplicate returns the existing entry, is_new=False."""
         if src.suffix.lower() not in EXTS:
             return None, False
@@ -118,6 +121,8 @@ class Library:
                         e.caption, changed = caption, True
                     if credit and not e.credit:
                         e.credit, changed = credit, True
+                    if license and not e.license:
+                        e.license, e.page_url, changed = license, page_url, True
                     if changed:
                         self._save(entries)
                     return e, False
@@ -131,7 +136,7 @@ class Library:
             th.save(self.root / "thumbs" / f"{eid}.jpg", quality=82)
             cap = caption or re.sub(r"[_\-]+", " ", src.stem)
             e = Entry(eid, rel, cap if caption else "", [t.strip() for t in tags or [] if t.strip()], credit,
-                      source, im.width, im.height, h, time.time())
+                      source, im.width, im.height, h, time.time(), license=license, page_url=page_url)
             entries[eid] = e
             self._save(entries)
             return e, True

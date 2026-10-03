@@ -43,6 +43,23 @@ photos from your inventory on its own, preferring ones you've used less. New pho
 describes what is visible and never names people from their faces) so they can be found later. Photos stay on your computer except
 small previews sent to your AI provider for captioning and arranging.
 
+## Photo finder (relevant, copyright-safe photos that YOU approve)
+In the Create and Deep analysis tabs, click **Find relevant free photos online** *before* making the video.
+1. The AI first works out what the story actually needs to show - specific places, institutions, events and named officials - instead of
+   searching generic stock words.
+2. It searches **Wikimedia Commons** and **Openverse** (no key needed), plus **Pexels** and **Pixabay** if you add their free keys in Settings.
+3. Only licences that allow commercial reuse are kept: public domain / CC0, CC BY (with credit), and the Pexels / Pixabay licences.
+   CC BY-SA is off by default (`images.scout.allow_cc_by_sa`); **NonCommercial and NoDerivatives are always rejected**.
+4. Each photo gets a relevance score (the AI looks at the picture and its caption). Photos with watermarks or logos are dropped, text-heavy or
+   blurry ones are marked down, and generic stock photos are labelled **stock** (they are never photos of the real event).
+   **People are never identified from faces**: a photo of a named person is only offered if its caption or file name says who it is.
+5. You see every candidate with its licence, creator, a link to the source page and the reason for its score. Photos rated 7/10 or better are pre-ticked;
+   untick, search again with your own words, then **Use selected photos**. Only those are used.
+6. Approved photos go to your library with credit and licence, and the credit is added to the video description automatically.
+   If a video has no photos at all it uses plain headline cards, never unchecked images. Unattended runs (`daily`, `breaking`) use
+   `images.stock_mode: auto_strict` (only photos rated 8/10 or better) or `off`. CLI: `python -m newschannel scout --headline "..." --add-top 4`.
+Licences vary by photo - the tool records what each source states; for anything sensitive, open the source link and check.
+
 ## Using your own images
 * Drop photos in `inbox/` (used for any story) or `inbox/<topic-slug>/` (one story), or pass `--images folder`.
 * Optional `captions.txt` in the folder: `filename.jpg: what the photo shows` — helps the AI match photos to lines.

@@ -41,7 +41,17 @@ formats:
 images:
   inbox_dir: "inbox"           # drop your own photos here (see README)
   min_side_px: 700             # reject low-res images (look bad when zoomed)
-  use_stock_fallback: true     # Pexels / Wikimedia Commons when you supply too few
+  stock_mode: "auto_strict"    # where extra photos come from when you supply too few:
+                               #   auto_strict = unattended runs fetch only photos the AI rates as a clear fit (>= stock_min_score)
+                               #   off         = never fetch online photos
+                               # (in the web app you always approve the photos yourself first - nothing is fetched automatically)
+  stock_min_score: 8
+  scout:                       # copyright-safe photo search (Wikimedia Commons + Openverse need no key; Pexels/Pixabay need a free key)
+    providers: ["wikimedia", "openverse", "pexels", "pixabay"]
+    allow_cc_by_sa: false      # CC BY-SA photos need share-alike; off by default. NonCommercial / NoDerivatives are always rejected.
+    min_width: 1280
+    per_need: 6
+    recommend_from: 7          # candidates scoring at least this are pre-selected for your approval
   max_per_scene: 3
   library_dir: "library"       # your photo inventory: every photo you add is kept and reusable
   save_to_library: true        # add uploaded / stock photos to the inventory automatically

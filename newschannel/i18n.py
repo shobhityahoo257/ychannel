@@ -18,6 +18,7 @@ LABELS: dict[str, dict[str, str]] = {
         "d_sources": "Sources:", "d_clips": "Video excerpts:", "d_credits": "Image credits:",
         "d_ai": "Note: Is video ka script aur awaaz AI ki madad se bani hai aur publish se pehle editorial check se guzri hai. "
                 "Yeh content jaankari aur vishleshan ke liye hai; kisi party ya vyakti ka samarthan ya virodh nahi.",
+        "d_stock_note": "Note: Pexels/Pixabay photos are generic representative images, not photos of the actual event.",
         "d_watch": "Watch next:", "d_playlist": "Full playlist:", "d_next": "Next:",
         "comment_q": "Aapki kya raay hai? Neeche comment mein bataiye.", "comment_next": "Agla video:",
         "comment_sub": "Aisi khabron ke liye channel ko subscribe karna na bhoolein.",
@@ -42,6 +43,7 @@ LABELS: dict[str, dict[str, str]] = {
         "d_credits": "तस्वीरें / Image credits:",
         "d_ai": "ℹ️ इस वीडियो की स्क्रिप्ट और आवाज़ AI की मदद से तैयार की गई है और प्रकाशन से पहले संपादकीय जाँच से गुज़री है। "
                 "यह सामग्री सूचना और विश्लेषण के उद्देश्य से है; किसी पार्टी या व्यक्ति का समर्थन/विरोध नहीं।",
+        "d_stock_note": "नोट: Pexels/Pixabay की तस्वीरें सामान्य प्रतीकात्मक तस्वीरें हैं, असली घटना की नहीं।",
         "d_watch": "Watch next / और देखिए:", "d_playlist": "Full playlist:", "d_next": "Next / अगला:",
         "comment_q": "आपकी क्या राय है? नीचे कमेंट में बताइए 👇", "comment_next": "▶ अगला वीडियो:",
         "comment_sub": "ऐसी खबरों के लिए चैनल को सब्सक्राइब करना न भूलें।",

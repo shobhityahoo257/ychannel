@@ -50,7 +50,7 @@ def cfg(tmp_path):
     c.data["tts"]["provider"] = "mock"
     c.data.setdefault("content", {})["language"] = "hindi"      # legacy tests assert Hindi (Devanagari) output
     c.data["images"]["inbox_dir"] = str(tmp_path / "inbox")
-    c.data["images"]["use_stock_fallback"] = False
+    c.data["images"]["stock_mode"] = "off"
     c.data["images"]["library_dir"] = str(tmp_path / "library")
     c.data["youtube"]["output_dir"] = str(tmp_path / "out")
     c.data["audio"]["music_dir"] = str(tmp_path / "nomusic")
