@@ -12,7 +12,18 @@ from .config import Config
 from .i18n import TTS_REPLACE, norm
 from .models import SceneAudio, Word
 
+_MONEY = re.compile(r"(US\$|\$|€|£)\s?(\d[\d,]*(?:\.\d+)?)(\s?(?:trillion|billion|million|thousand|lakh crore|crore|lakh))?", re.I)
+_CCY = {"US$": "US dollars", "$": "dollars", "€": "euros", "£": "pounds"}
+
+
+def _speak_money(m: "re.Match") -> str:
+    sym = "US$" if m.group(1).upper() == "US$" else m.group(1)
+    return f"{m.group(2)}{m.group(3) or ''} {_CCY[sym]}"
+
+
 def normalize(text: str, lang: str = "hinglish") -> str:
+    if norm(lang) == "english":              # "$2.5 trillion" must be spoken "2.5 trillion dollars"
+        text = _MONEY.sub(_speak_money, text)
     for a, b in TTS_REPLACE[norm(lang)]:
         text = text.replace(a, b)
     return re.sub(r"\s+", " ", text).strip()
@@ -56,7 +67,8 @@ class ElevenLabsTTS:
                          "style": t.get("style", 0.0), "speed": t.get("speed", 1.0),
                          "use_speaker_boost": True}
         self.model = t["model_id"]
-        self.lang, self.language_code = cfg.lang, t.get("language_code", "hi")
+        self.lang = cfg.lang
+        self.language_code = "en" if self.lang == "english" else t.get("language_code", "hi")
 
     def synthesize(self, text: str, out: Path, prev: str = "", nxt: str = "") -> SceneAudio:
         body = {"text": normalize(text, self.lang), "model_id": self.model, "voice_settings": self.settings,
@@ -96,6 +108,7 @@ class OpenAITTS:
         ins = t.get("openai_instructions", "")
         self.lang = cfg.lang
         self.instructions = ins.get(self.lang, "") if isinstance(ins, dict) else ins
+        self.stt_lang = "en" if self.lang == "english" else "hi"
         self.speed = t.get("speed", 1.0)
 
     def synthesize(self, text: str, out: Path, prev: str = "", nxt: str = "") -> SceneAudio:
@@ -109,7 +122,7 @@ class OpenAITTS:
         out.write_bytes(r.content)
         dur = probe_duration(out)
         try:
-            _, heard = stt.openai_words(str(out), language="hi")
+            _, heard = stt.openai_words(str(out), language=self.stt_lang)
         except Exception:
             heard = []
         return SceneAudio(str(out), dur, align_words(text.split(), heard, dur))

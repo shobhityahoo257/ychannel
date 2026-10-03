@@ -144,7 +144,89 @@ def sources_card(ledger: Ledger, spec: dict[str, Any], brand: Brand, lang: str, 
     return out
 
 
-BUILDERS = {"quote": quote_card, "number": number_card, "timeline": timeline_card, "sources": sources_card}
+def _tick(lo: float, hi: float, n: int = 4) -> list[float]:
+    """Round-numbered gridlines between lo and hi."""
+    import math
+    span = (hi - lo) or abs(hi) or 1.0
+    raw = span / n
+    mag = 10 ** math.floor(math.log10(raw))
+    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
+    first = math.floor(lo / step) * step
+    out, v = [], first
+    while v <= hi + step * 0.01:
+        out.append(round(v, 10))
+        v += step
+    return out
+
+
+def _fmt_val(v: float, unit: str) -> str:
+    if unit == "pct":
+        return f"{v:g}%"
+    if unit in ("usd", "people"):
+        for div, word in ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")):
+            if abs(v) >= div:
+                return f"{'$' if unit == 'usd' else ''}{v / div:g}{word}"
+        return f"{'$' if unit == 'usd' else ''}{v:g}"
+    return f"{v:g}"
+
+
+def chart_card(ledger: Ledger, spec: dict[str, Any], brand: Brand, lang: str, W: int, H: int, out: Path) -> Path:
+    """Line chart drawn straight from the World Bank series behind the cited claims (up to 3 countries, same indicator)."""
+    from .deep import chart_series
+    srcs = chart_series(ledger, [c for c in (ledger.claim(i) for i in spec["claim_ids"]) if c])
+    if not srcs:
+        raise ValueError("no data series behind these claims")
+    first = srcs[0].series
+    im = _background(W, H, brand)
+    d = ImageDraw.Draw(im)
+    put(d, (W * 0.08, H * 0.09), spec.get("label") or first["label"], font=font(brand.font_bold, int(H * 0.058)),
+        fill=(255, 255, 255), anchor="lm")
+    put(d, (W * 0.92, H * 0.045), t(lang, "ex_data").upper(), font=font(brand.font_bold, int(H * 0.03)), fill=brand.accent, anchor="ra")
+    left, right, top, bottom = W * 0.12, W * 0.92, H * 0.22, H * 0.80
+    pts_all = [p for s in srcs for p in s.series["points"]]
+    x0, x1 = min(p[0] for p in pts_all), max(p[0] for p in pts_all)
+    lo, hi = min(p[1] for p in pts_all), max(p[1] for p in pts_all)
+    if first["unit"] in ("pct", "usd", "people") and lo > 0 and lo < hi * 0.4:
+        lo = 0.0
+    lo, hi = min(lo, 0.0) if lo < 0 else lo, max(hi, 0.0) if hi < 0 else hi
+    ticks = _tick(lo, hi)
+    lo, hi = min(lo, ticks[0]), max(hi, ticks[-1])
+
+    def X(x: float) -> float:
+        return left + (right - left) * ((x - x0) / ((x1 - x0) or 1))
+
+    def Y(v: float) -> float:
+        return bottom - (bottom - top) * ((v - lo) / ((hi - lo) or 1))
+
+    gf = font(brand.font_regular, int(H * 0.030))
+    for tv in ticks:
+        y = Y(tv)
+        d.line((left, y, right, y), fill=(70, 80, 110) if tv else (150, 160, 190), width=2 if tv == 0 else 1)
+        put(d, (left - 14, y), _fmt_val(tv, first["unit"]), font=gf, fill=(190, 198, 220), anchor="rm")
+    years = sorted({p[0] for p in pts_all})
+    for yr in years[::max(1, len(years) // 7)]:
+        put(d, (X(yr), bottom + 14), str(yr), font=gf, fill=(190, 198, 220), anchor="ma")
+    palette = [brand.accent, (88, 196, 255), (255, 200, 87)]
+    lf = font(brand.font_bold, int(H * 0.036))
+    for k, s in enumerate(srcs):
+        col = palette[k % len(palette)]
+        xy = [(X(x), Y(v)) for x, v in s.series["points"]]
+        d.line(xy, fill=col, width=max(4, int(H * 0.007)), joint="curve")
+        d.ellipse((xy[-1][0] - 9, xy[-1][1] - 9, xy[-1][0] + 9, xy[-1][1] + 9), fill=col)
+        put(d, (xy[-1][0] - 16, xy[-1][1] - 34), _fmt_val(s.series["points"][-1][1], first["unit"]), font=lf, fill=col, anchor="rs")
+        if len(srcs) > 1:
+            lx = left + k * W * 0.2
+            d.rectangle((lx, H * 0.155, lx + 28, H * 0.155 + 10), fill=col)
+            put(d, (lx + 40, H * 0.16), s.series["country"], font=gf, fill=(235, 238, 248), anchor="lm")
+    src = " · ".join(dict.fromkeys(friendly(s.outlet) for s in srcs))
+    put(d, (W * 0.08, H * 0.93), f"{t(lang, 'source')}: {src}" + (f"  ·  {srcs[0].published}" if srcs[0].published else ""),
+        font=font(brand.font_regular, int(H * 0.03)), fill=(200, 205, 220), anchor="lm")
+    im.save(out, quality=95)
+    return out
+
+
+BUILDERS = {"quote": quote_card, "number": number_card, "timeline": timeline_card, "sources": sources_card,
+            "chart": chart_card}
 
 
 def build_card(ledger: Ledger, spec: dict[str, Any], brand: Brand, lang: str, W: int, H: int, out: Path) -> Path | None:

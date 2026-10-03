@@ -45,6 +45,7 @@ def upload(video: Path, thumb: Path | None, meta: dict[str, Any], yt_cfg: dict, 
     title = meta["title"][:100]
     if short and "#Shorts" not in title and len(title) <= 92:
         title += " #Shorts"
+    lang = "en" if meta.get("language") == "english" else "hi"
     status: dict[str, Any] = {
         "privacyStatus": "private" if publish_at else yt_cfg["privacy"],
         "selfDeclaredMadeForKids": yt_cfg.get("made_for_kids", False),
@@ -55,8 +56,9 @@ def upload(video: Path, thumb: Path | None, meta: dict[str, Any], yt_cfg: dict, 
     body = {
         "snippet": {
             "title": title, "description": meta["description"],
-            "tags": (meta.get("tags", []) + yt_cfg.get("default_tags", []))[:30],
-            "categoryId": yt_cfg["category_id"], "defaultLanguage": "hi", "defaultAudioLanguage": "hi",
+            "tags": (meta.get("tags", []) + meta.get("default_tags", yt_cfg.get("default_tags", [])))[:30],
+            "categoryId": meta.get("category_id") or yt_cfg["category_id"],
+            "defaultLanguage": lang, "defaultAudioLanguage": lang,
         },
         "status": status,
     }

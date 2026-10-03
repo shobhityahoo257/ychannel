@@ -39,18 +39,22 @@ def sync(store: Store, fetch: Callable[[list[str]], dict[str, dict[str, Any]]] |
     return len(perf)
 
 
-def rows(store: Store) -> list[dict[str, Any]]:
+def rows(store: Store, style: str | None = None) -> list[dict[str, Any]]:
+    """History joined with analytics. `style` restricts to one channel (explainer vs news); None = everything."""
+    from .explainer import channel_of
     perf = load_perf(store)
     out = []
     for h in store.history():
+        if style is not None and channel_of(h.get("style")) != channel_of(style):
+            continue
         p = perf.get(h.get("video_id", ""))
         if p:
             out.append({**h, **p})
     return out
 
 
-def insights(store: Store) -> dict[str, Any]:
-    rated = [r for r in rows(store) if r.get("views", 0) >= MIN_VIEWS and r.get("avg_pct") is not None]
+def insights(store: Store, style: str | None = None) -> dict[str, Any]:
+    rated = [r for r in rows(store, style) if r.get("views", 0) >= MIN_VIEWS and r.get("avg_pct") is not None]
     by_fmt: dict[str, Any] = {}
     for fmt in ("short", "long"):
         sub = [r for r in rated if r.get("format") == fmt]
@@ -59,15 +63,15 @@ def insights(store: Store) -> dict[str, Any]:
                            "avg_views": round(mean(r["views"] for r in sub))}
     by_ret = sorted(rated, key=lambda r: -r["avg_pct"])
     by_views = sorted(rated, key=lambda r: -r["views"])
-    return {"rated": len(rated), "total": len(rows(store)), "by_format": by_fmt,
+    return {"rated": len(rated), "total": len(rows(store, style)), "by_format": by_fmt,
             "best_hooks": [r for r in by_ret[:3] if r.get("hook")],
             "worst_hooks": [r for r in by_ret[::-1][:2] if r.get("hook")] if len(by_ret) >= 6 else [],
             "best_titles": by_views[:3], "ready": len(rated) >= MIN_VIDEOS}
 
 
-def prompt_hint(store: Store) -> str:
-    """Short text for the script writer; empty until there is enough data."""
-    ins = insights(store)
+def prompt_hint(store: Store, style: str | None = None) -> str:
+    """Short text for the script writer; empty until there is enough data. Lessons come only from the same channel."""
+    ins = insights(store, style)
     if not ins["ready"]:
         return ""
     lines = []

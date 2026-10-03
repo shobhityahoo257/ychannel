@@ -415,3 +415,53 @@ def test_deep_step_by_step_blocks_a_failing_script_until_edited(client, monkeypa
     assert j["status"] == "done", j["error"]                                               # photos were set to auto, so it went on to render
     v = c.get("/api/videos").get_json()["videos"][0]
     assert v["id"] == wid and v["analysis"]["stance"] == "critical" and not [i for i in v["issues"] if i["level"] == "block"]
+
+
+def test_explainer_flow_through_the_api(client, monkeypatch):
+    import test_explainer as TX
+    from newschannel import data as data_mod
+    c, tmp = client
+    fc = TX.client_for_research()
+    fc.answers["submit_ideas"] = lambda kw: {"ideas": TX.raw_ideas()}
+    monkeypatch.setattr(webui, "make_client", lambda cfg, required=True: fc)
+    monkeypatch.setattr("newschannel.research.fetch_article", TX.fake_fetch)
+    monkeypatch.setattr(data_mod.requests, "get", lambda url, **kw: TX.wb_http(url, **kw) if "worldbank" in url else TX.wiki_http(url, **kw))
+    conf = c.get("/api/explainer/config").get_json()
+    assert conf["channel"]["name"] == "Money Explained" and conf["language"] == "english"
+    assert {s["id"] for s in conf["series"]} >= {"how_it_works", "country_in_numbers"} and any(i["key"] == "gdp_growth" for i in conf["indicators"])
+    assert "India" in conf["countries"]
+    # topic ideas are cleaned in code and never repeat
+    ideas = c.post("/api/explainer/ideas", json={"focus": "inflation", "n": 5}).get_json()["ideas"]
+    assert [i["title"] for i in ideas] == ["How central banks fight inflation", "Why currencies collapse"]
+    assert c.post("/api/explainer/ideas", json={}).get_json()["ideas"] == []
+    # research: validation, then official data + discovered sources + the user's links
+    assert c.post("/api/analysis/research", json={"headline": "x", "style": "novel"}).status_code == 400
+    assert c.post("/api/analysis/research", json={"headline": "x", "style": "explainer"}).status_code == 400   # no sources at all
+    body = {"headline": "How central banks fight inflation", "style": "explainer", "discover": True,
+            "urls": "https://someblog.example.com/rates",
+            "data": [{"country": "India", "indicators": ["gdp_growth", "bogus"]}, {"country": "", "indicators": ["gdp"]}, "junk"]}
+    j = wait(c, c.post("/api/analysis/research", json=body).get_json()["job"])
+    assert j["status"] == "done", j["error"]
+    res = j["result"]
+    assert res["style"] == "explainer" and res["enough"] and res["recommend"]["stance"] == "neutral"
+    assert {s["outlet"] for s in res["ledger"]["sources"]} >= {"imf.org", "reuters.com", "data.worldbank.org"}
+    from newschannel.ledger import Ledger
+    led = Ledger.load(tmp / "out" / "_research" / res["research_id"] / "ledger.json")
+    scenes = TX.good_scenes(led)
+    fc.answers["submit_analysis"] = {"title": "Why central banks raise rates", "description": "d", "tags": ["rates"], "scenes": scenes}
+    fc.answers["arrange_photos"] = lambda kw: {"scenes": []}
+    base = {"research_id": res["research_id"], "style": "explainer", "minutes": str(TX.minutes_for(scenes)), "language": "english", "music": "calm"}
+    assert c.post("/api/analysis/create", data={**base, "style": "poem"}, content_type="multipart/form-data").status_code == 400
+    assert c.post("/api/analysis/create", data={**base, "language": "klingon"}, content_type="multipart/form-data").status_code == 400
+    # step-by-step: the draft stops at the script, is marked as an explainer, and the idea is marked as made
+    r = c.post("/api/analysis/create", data={**base, "mode": json.dumps({"script": "manual", "photos": "manual"})},
+               content_type="multipart/form-data").get_json()
+    wj = wait(c, r["job"])
+    assert wj["status"] == "done", wj["error"]
+    d = c.get("/api/workflows").get_json()["drafts"][0]
+    assert d["style"] == "explainer" and d["status"] == "script_review"
+    wf = c.get(f"/api/workflows/{d['id']}").get_json()
+    assert wf["params"]["style"] == "explainer" and wf["script"]["style"] == "explainer" and wf["check"]["violations"] == []
+    import json as _j
+    stored = _j.loads((tmp / "out" / "_ideas.json").read_text(encoding="utf-8"))
+    assert {i["title"]: i["status"] for i in stored}["How central banks fight inflation"] == "made"

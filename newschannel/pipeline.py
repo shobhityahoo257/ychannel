@@ -192,7 +192,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     if clips:
         log(f"clips: {len(clips)} ({sum(c.duration for c in clips):.0f}s of original footage)")
 
-    insights = learn.prompt_hint(store)
+    insights = learn.prompt_hint(store, script.style if script is not None else "")
 
     # 1. script (cached so a failed render does not re-bill the LLM)
     sp = run / "script.json"
@@ -203,7 +203,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     elif script is not None:                      # deep analysis: already written and fact-checked
         log("polishing title and thumbnail text…")
         pk = improve(client, model, script, topic, insights, cfg.get("playlists", {}).get("categories", []), lang,
-                     rewrite_hook=False)
+                     rewrite_hook=False, style=script.style)
         save_json(run / "packaging.json", pk)
         save_json(sp, script)
     else:
@@ -333,7 +333,9 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     pk = Packaging(**json.loads(pkp.read_text(encoding="utf-8"))) if pkp.exists() else Packaging()
     photo_paths = list(dict.fromkeys(by_id[s.asset_id].path for s in shots if by_id[s.asset_id].kind != "graphic")) \
         or [by_id[shots[0].asset_id].path]
-    variants = make_variants(photo_paths, pk.thumb_texts, brand, run, script.scenes[0].headline, label(lang, "thumb_tag"))
+    explainer_style = script.style == "explainer"
+    variants = make_variants(photo_paths, pk.thumb_texts, brand, run, script.scenes[0].headline,
+                             label(lang, "ex_thumb_tag" if explainer_style else "thumb_tag"))
     thumb = run / "thumbnail.jpg"
     shutil.copyfile(variants[0]["file"], thumb)
 
@@ -343,7 +345,7 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
         credits.append(label(lang, "d_stock_note"))
     if ledger is not None:
         desc = deep.build_description(script, ledger, starts, intro, credits, cfg["channel"], lang, as_of,
-                                      cfg["youtube"].get("contains_synthetic_media", True))
+                                      cfg["youtube"].get("contains_synthetic_media", True), script.style or "analysis")
     else:
         desc = build_description(script, topic, cfg["channel"], not long_form, credits,
                                  cfg["youtube"].get("contains_synthetic_media", True), clips, lang)
@@ -352,13 +354,17 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
     if deep_check:
         issues += [Issue("block", f"Fact check: {m}") for m in deep_check[0]]
         issues += [Issue("warn", m) for m in deep_check[1]]
+    if ledger is not None and explainer_style:
+        issues.append(Issue("warn", "Explainer: general information only. Check that no scene reads like investment advice, and that "
+                                    "each chart and number matches its source before approving."))
     if ledger is not None and script.stance in ("critical", "supportive"):
         issues.append(Issue("warn", f"Angle: {script.stance}. Every point is tied to ledger claims, but read the script once "
                                     "and check the Counterpoint scene before approving."))
     if breaking:
         issues.append(Issue("warn", "BREAKING: details may still be developing. Re-check every fact against the "
                                     "sources before approving."))
-    meta = {"id": run_id, "status": "pending", "breaking": breaking, "language": lang, "format": fmt_name, "title": script.title,
+    meta = {"id": run_id, "status": "pending", "breaking": breaking, "language": lang, "format": fmt_name,
+            "style": script.style or "", "title": script.title,
             "description": desc, "tags": script.tags, "topic": topic.title, "video": str(final),
             "thumbnail": str(thumb), "thumbnails": variants, "category": pk.category,
             "title_options": [t["text"] for t in pk.titles], "hook": script.scenes[0].narration,
@@ -369,10 +375,14 @@ def produce(cfg: Config, topic: Topic, fmt_name: str, client: Any, tts: Any, sto
                        "transcript": c.transcript} for c in clips],
             "created": datetime.now(timezone.utc).isoformat()}
     if ledger is not None:
-        meta["analysis"] = {"stance": script.stance, "minutes": round(total / 60, 1), "counts": ledger.counts(),
+        meta["analysis"] = {"stance": script.stance, "style": script.style or "analysis", "minutes": round(total / 60, 1),
+                            "counts": ledger.counts(),
                             "as_of": as_of, "ledger_file": "ledger.json",
                             "sources": [{"id": x.id, "outlet": x.outlet, "tier": x.tier, "url": x.url, "title": x.title}
                                         for x in ledger.sources]}
+    if explainer_style:                          # explainers upload as Education with their own tags (see config: explainer)
+        meta["category_id"] = cfg["youtube"]["category_id"]
+        meta["default_tags"] = cfg["youtube"].get("default_tags", [])
     store.save_meta(run_id, meta)
     Library(cfg.path(cfg["images"].get("library_dir", "library"))).mark_used(lib_used)
     if any(i.level == "block" for i in issues):

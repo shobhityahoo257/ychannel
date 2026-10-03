@@ -204,6 +204,62 @@ def cmd_deep(cfg: Config, a) -> int:
     return 0
 
 
+def _parse_data(items: list[str] | None) -> list[dict]:
+    """--data India:gdp_growth,inflation  ->  [{"country": "India", "indicators": ["gdp_growth", "inflation"]}]"""
+    out = []
+    for item in items or []:
+        country, _, inds = item.partition(":")
+        out.append({"country": country.strip(), "indicators": [i.strip() for i in inds.split(",") if i.strip()]})
+    return out
+
+
+def cmd_explainer(cfg: Config, a) -> int:
+    from . import analysis, data as data_mod
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    client = _client(cfg)
+    specs = _parse_data(a.data)
+    bad = [i for sp in specs for i in sp["indicators"] if i not in data_mod.INDICATORS]
+    if bad:
+        print(f"Unknown indicator(s): {', '.join(bad)}.\nChoose from: {', '.join(data_mod.INDICATORS)}")
+        return 2
+    notes = Path(a.notes_file).read_text(encoding="utf-8") if a.notes_file else (a.notes or "")
+    from . import explainer
+    discover = explainer.settings(cfg)["discover"] and not a.no_discover
+    res = analysis.run_research(cfg, client, store, a.topic, a.url or [], notes, style="explainer", data=specs, discover=discover)
+    rec = res["recommend"]
+    print(f"\nSources read: {res['sources_found']}   Verified claims: {res['usable']} {res['counts']}")
+    print(f"Recommended length: {rec['minutes']} min - {rec.get('minutes_why', '')}")
+    print(f"Research id: {res['research_id']}  (ledger: {store.root / '_research' / res['research_id'] / 'ledger.json'})")
+    if a.research_only:
+        return 0
+    if not res["enough"]:
+        print("Not enough verified material to write an explainer. Add official sources or data (--url, --data) and run again.")
+        return 1
+    meta = analysis.make_video(cfg, client, make_tts(cfg), store, res["research_id"], "auto", a.minutes, a.language,
+                               a.music, [Path(p) for p in (a.images or [])], style="explainer")
+    blocks = [i["msg"] for i in meta["issues"] if i["level"] == "block"]
+    print(f"\n-> {meta['video']}" + (f"\nBLOCKED until fixed: {blocks}" if blocks else "\nPassed the automatic fact check."))
+    return 0
+
+
+def cmd_ideas(cfg: Config, a) -> int:
+    from . import explainer
+    store = Store(cfg.path(cfg["youtube"]["output_dir"]))
+    out = explainer.suggest(cfg, _client(cfg), explainer.Ideas(store.root / "_ideas.json"), a.n, a.focus or "", a.series or "",
+                            store.history())
+    if not out:
+        print("No new ideas this time (everything suggested was already used). Try a different --focus.")
+    for i, idea in enumerate(out, 1):
+        print(f"\n{i}. {idea['title']}   [{idea['series']}, {idea['difficulty']} to source]\n   {idea['question']}\n   why: {idea['why']}")
+        if idea["data_hooks"]:
+            print("   chart data: " + "; ".join(f"{h['country']}:{','.join(h['indicators'])}" for h in idea["data_hooks"]))
+        if idea["source_hints"]:
+            print("   read: " + ", ".join(idea["source_hints"]))
+    if out:
+        print("\nIdeas are leads, not facts. Start one with:  python -m newschannel explainer --topic \"<title>\" --data India:gdp_growth")
+    return 0
+
+
 def cmd_scout(cfg: Config, a) -> int:
     from . import scout
     from .library import Library
@@ -276,8 +332,18 @@ def main(argv: list[str] | None = None) -> int:
     dp.add_argument("--notes"); dp.add_argument("--notes-file")
     dp.add_argument("--stance", default="auto", choices=["auto", "neutral", "critical", "supportive"])
     dp.add_argument("--minutes", default="auto", help="number of minutes, or auto")
-    dp.add_argument("--language", choices=["hinglish", "hindi"]); dp.add_argument("--music", choices=["auto", "calm", "tension", "warm", "off"])
+    dp.add_argument("--language", choices=["hinglish", "hindi", "english"]); dp.add_argument("--music", choices=["auto", "calm", "tension", "warm", "off"])
     dp.add_argument("--images", nargs="*"); dp.add_argument("--research-only", action="store_true")
+    ex = sub.add_parser("explainer", help="make a fact-checked economics / business explainer (English by default)")
+    ex.add_argument("--topic", required=True); ex.add_argument("--url", action="append", help="source link (repeat)")
+    ex.add_argument("--data", action="append", help="official data for charts, e.g. India:gdp_growth,inflation (repeat per country)")
+    ex.add_argument("--no-discover", action="store_true", help="do not look for official sources via Wikipedia's citations")
+    ex.add_argument("--notes"); ex.add_argument("--notes-file")
+    ex.add_argument("--minutes", default="auto", help="number of minutes, or auto")
+    ex.add_argument("--language", choices=["english", "hinglish", "hindi"]); ex.add_argument("--music", choices=["auto", "calm", "tension", "warm", "off"])
+    ex.add_argument("--images", nargs="*"); ex.add_argument("--research-only", action="store_true")
+    ide = sub.add_parser("ideas", help="suggest evergreen economics / business explainer topics")
+    ide.add_argument("--focus"); ide.add_argument("--series"); ide.add_argument("-n", type=int, default=8)
     sc = sub.add_parser("scout", help="find relevant copyright-safe photos for a story")
     sc.add_argument("--headline", required=True); sc.add_argument("--text"); sc.add_argument("--query", action="append")
     sc.add_argument("--add-top", type=int, default=0, help="add the N best recommended photos to your library")
@@ -285,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     cfg = Config.load(a.config)
     return {"ui": cmd_ui, "doctor": cmd_doctor, "demo": cmd_demo, "fetch": cmd_fetch, "daily": cmd_daily, "make": cmd_make,
-            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "study": cmd_study, "scout": cmd_scout, "deep": cmd_deep, "breaking": cmd_breaking, "playlists": cmd_playlists, "endscreen": cmd_endscreen}[a.cmd](cfg, a)
+            "review": cmd_review, "publish": cmd_publish, "stats": cmd_stats, "insights": cmd_insights, "schedule": cmd_schedule, "study": cmd_study, "scout": cmd_scout, "deep": cmd_deep, "explainer": cmd_explainer, "ideas": cmd_ideas, "breaking": cmd_breaking, "playlists": cmd_playlists, "endscreen": cmd_endscreen}[a.cmd](cfg, a)
 
 
 if __name__ == "__main__":

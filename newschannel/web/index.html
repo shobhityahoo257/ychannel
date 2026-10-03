@@ -63,6 +63,11 @@ video{width:100%;border-radius:10px;background:#000;max-height:360px}
 .k{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-top:10px}
 .k small{color:var(--mute)}
 .hide{display:none!important}
+.chips-check{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chips-check label{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:13px;cursor:pointer}
+.chips-check label:has(input:checked){border-color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent)}
+.idea{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px}
+.idea h3{margin:0 0 4px;font-size:15px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none;z-index:9}
 .toast.on{opacity:1}
 details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
@@ -109,6 +114,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
   <nav>
     <button data-tab="make" class="on">🎬 Create video</button>
     <button data-tab="analysis">🔎 Deep analysis</button>
+    <button data-tab="explainer">📈 Explainers</button>
     <button data-tab="review">✅ Review steps <span class="pill warn" id="draftBadge" style="display:none"></span></button>
     <button data-tab="videos">📋 My videos</button>
     <button data-tab="library">🖼️ Photo library</button>
@@ -199,12 +205,37 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
 
 <!-- ================= DEEP ANALYSIS ================= -->
 <section id="tab-analysis" class="hide">
-  <div class="card">
+  <div class="card only-explainer hide">
+    <h2>Economics &amp; business explainer</h2>
+    <p class="hint">An evergreen, documentary-style video for a global audience: how something works, why it happened, what the data shows. The app reads <b>official sources and data</b>, checks every claim against its source in code, draws <b>charts from real World Bank data</b>, and writes the script in plain English. It explains; it never gives investment advice.</p>
+  </div>
+  <div class="card only-analysis">
     <h2>Deep analysis video</h2>
     <p class="hint">Not just news: a researched explainer. The app reads your sources, extracts every claim, <b>checks each one against its source in code</b>, and only then writes the video. Every fact on screen traces back to a source; analysis is labelled as our interpretation.</p>
   </div>
 
-  <div class="card">
+  <div class="card only-explainer hide" id="xStep1">
+    <h2>Step 1 · Pick a topic</h2>
+    <div class="row"><input type="text" id="xFocus" placeholder="Optional focus for ideas, e.g. 'currencies' or 'India and trade'" style="flex:1;min-width:220px">
+      <select id="xSeries" style="padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)"><option value="">Any format</option></select>
+      <button class="btn" id="xIdeasBtn">💡 Suggest topics</button></div>
+    <div id="xIdeas"></div>
+    <label class="l" for="xTopic">Topic</label>
+    <input type="text" id="xTopic" placeholder="e.g. How central banks control inflation">
+    <label class="l">Official data for charts (World Bank, no key needed)</label>
+    <div class="row"><input type="text" id="xCountry" list="xCountries" placeholder="Country, e.g. India" style="flex:1;min-width:160px"><datalist id="xCountries"></datalist>
+      <button class="btn" id="xDataAdd">+ Add country data</button></div>
+    <div class="chips-check" id="xInds"></div>
+    <div id="xDataList" style="margin-top:6px"></div>
+    <label class="l" for="xUrls">Your own source links, one per line (optional, official sources count most)</label>
+    <textarea id="xUrls" style="min-height:90px" placeholder="https://www.imf.org/...&#10;https://www.federalreserve.gov/...&#10;https://www.reuters.com/..."></textarea>
+    <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="xDiscover" checked style="margin-top:3px"><span><b>Find official sources automatically</b><br><span class="hint" style="margin:0">Follows the citations of Wikipedia articles on the topic and keeps only official and major-outlet pages. Wikipedia itself is never used as a source of facts.</span></span></label>
+    <label class="l" for="xNotes">Your own notes (optional; notes alone are never treated as confirmed)</label>
+    <textarea id="xNotes" style="min-height:60px"></textarea>
+    <div class="row" style="margin-top:14px"><button class="btn primary" id="xResearch">🔎 Research &amp; fact-check</button></div>
+  </div>
+
+  <div class="card only-analysis">
     <h2>Step 1 · What to analyse</h2>
     <div class="seg" id="aModeSeg">
       <label class="on"><input type="radio" name="amode" value="own" checked><b>🔗 My topic and sources</b><span>Headline + links (PIB, courts, newspapers)</span></label>
@@ -239,16 +270,16 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
     </div>
 
     <div class="card">
-      <h2>Step 2 · Decide the angle and length</h2>
+      <h2><span class="only-analysis">Step 2 · Decide the angle and length</span><span class="only-explainer hide">Step 2 · Length and voice</span></h2>
       <div class="banner" id="aRec" style="background:color-mix(in srgb,var(--ok) 10%,transparent);border-color:color-mix(in srgb,var(--ok) 40%,transparent)"></div>
-      <label class="l">Angle (all of them are fact-based)</label>
-      <div class="seg" id="aStanceSeg">
+      <label class="l only-analysis">Angle (all of them are fact-based)</label>
+      <div class="seg only-analysis" id="aStanceSeg">
         <label class="on"><input type="radio" name="astance" value="auto" checked><b>✨ Use the recommendation</b><span id="aStanceAuto">...</span></label>
         <label><input type="radio" name="astance" value="neutral"><b>⚖️ Neutral</b><span>All documented sides, equal weight</span></label>
         <label><input type="radio" name="astance" value="critical"><b>🔍 Critical</b><span>Scrutinise gaps, costs, unanswered questions</span></label>
         <label><input type="radio" name="astance" value="supportive"><b>🤝 Complementary</b><span>Explain strengths and documented results</span></label>
       </div>
-      <p class="hint" style="margin:8px 0 0">Critical and Complementary videos always include a <b>counterpoint</b> scene. Criticism targets decisions, never character, and nothing is said about anyone's private motives.</p>
+      <p class="hint only-analysis" style="margin:8px 0 0">Critical and Complementary videos always include a <b>counterpoint</b> scene. Criticism targets decisions, never character, and nothing is said about anyone's private motives.</p>
       <label class="l">Length</label>
       <div class="seg" id="aLenSeg">
         <label class="on"><input type="radio" name="alen" value="auto" checked><b>✨ Recommended</b><span id="aLenAuto">...</span></label>
@@ -259,12 +290,13 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
       </div>
       <label class="l">Language</label>
       <div class="seg" id="aLangSeg">
+        <label><input type="radio" name="alang" value="english"><b>English</b><span>Global audience</span></label>
         <label class="on"><input type="radio" name="alang" value="hinglish" checked><b>Hinglish</b><span>Hindi + English words, Roman script</span></label>
         <label><input type="radio" name="alang" value="hindi"><b>Hindi</b><span>Devanagari script</span></label>
       </div>
       <label class="l" for="aMusic">Background music</label>
       <select id="aMusic" style="padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)">
-        <option value="auto">Auto (mood follows the angle)</option><option value="calm">Calm</option><option value="tension">Tension</option>
+        <option value="auto">Auto (mood follows the video)</option><option value="calm">Calm</option><option value="tension">Tension</option>
         <option value="warm">Warm</option><option value="off">No music</option></select>
       <span class="hint">Royalty-free music is generated for you. Put your own tracks in <code>assets/music</code> to use them instead.</span>
     </div>
@@ -280,7 +312,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px;margin-top:10px}
     </div>
 
     <div class="card"><h2>Step 4 · How should it run?</h2><div id="aApprHost"></div></div>
-    <div class="row"><button class="btn primary" id="aCreate">🎬 Create analysis video</button></div>
+    <div class="row"><button class="btn primary" id="aCreate">🎬 Create video</button></div>
     <div class="card hide" id="aProg2" style="margin-top:16px"><h2 id="aP2Title">Creating...</h2><p class="hint" id="aP2Step">Starting</p>
       <div class="bar"><i id="aP2Bar"></i></div><pre class="log" id="aP2Log"></pre><div id="aDone" class="hide" style="margin-top:12px"></div></div>
   </div>
@@ -349,7 +381,9 @@ async function api(url, opts){const r=await fetch(url,opts);let j={};try{j=await
 
 // ---- tabs
 $$('nav button').forEach(b=>b.onclick=()=>{ $$('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['make','analysis','review','videos','library','settings'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==b.dataset.tab));
+  const sec=b.dataset.tab==='explainer'?'analysis':b.dataset.tab;
+  ['make','analysis','review','videos','library','settings'].forEach(t=>$('#tab-'+t).classList.toggle('hide',t!==sec));
+  if(b.dataset.tab==='analysis'||b.dataset.tab==='explainer') setAnaStyle(b.dataset.tab==='explainer'?'explainer':'analysis');
   if(b.dataset.tab==='videos') loadVideos(); if(b.dataset.tab==='review') loadDrafts(); if(b.dataset.tab==='library') loadLibrary(); if(b.dataset.tab==='settings') loadStatus(); });
 function goTab(t){ $(`nav button[data-tab=${t}]`).click() }
 
@@ -506,7 +540,7 @@ async function loadVideos(){
   videos.forEach(v=>{ const [stT,stC]=ST[v.status]||[v.status,'']; const d=document.createElement('div'); d.className='card';
     const issues=(v.issues||[]).map(i=>`<div class="issue ${i.level==='block'?'block':''}">${i.level==='block'?'🚫':'⚠️'} ${esc(i.msg)}</div>`).join('');
     d.innerHTML=`<div class="vid"><video controls preload="metadata" poster="${v.thumb_url}" src="${v.video_url}" ${v.format==='short'?'style="max-height:420px"':''}></video>
-      <div><div class="row"><b style="font-size:17px">${esc(v.title)}</b></div><div class="row" style="margin:6px 0"><span class="pill ${stC}">${stT}</span><span class="pill">${v.format==='short'?'📱 Short':'🖥️ Long'}</span><span class="pill">${Math.round(v.duration)}s</span>${v.analysis?`<span class="pill">🔎 ${esc(v.analysis.stance)}</span>`:''}${v.language?`<span class="pill">${v.language==='hindi'?'Hindi':'Hinglish'}</span>`:''}</div>
+      <div><div class="row"><b style="font-size:17px">${esc(v.title)}</b></div><div class="row" style="margin:6px 0"><span class="pill ${stC}">${stT}</span><span class="pill">${v.format==='short'?'📱 Short':'🖥️ Long'}</span><span class="pill">${Math.round(v.duration)}s</span>${v.analysis?`<span class="pill">${v.analysis.style==='explainer'?'📈 Explainer':'🔎 '+esc(v.analysis.stance)}</span>`:''}${v.language?`<span class="pill">${LANG_NAME[v.language]||v.language}</span>`:''}</div>
       ${issues}
       <div class="row" style="margin-top:12px">
         ${v.status==='pending'||v.status==='rejected'?`<button class="btn ok" data-a="approve">✅ Approve</button>`:''}
@@ -569,6 +603,7 @@ $('#reload').onclick=loadVideos;
 // ---- deep analysis
 seg('aModeSeg', v=>{ $('#aOwn').classList.toggle('hide',v!=='own'); $('#aNews').classList.toggle('hide',v!=='news') });
 seg('aStanceSeg'); seg('aLenSeg'); seg('aLangSeg');
+const LANG_NAME={english:'English',hinglish:'Hinglish',hindi:'Hindi'};
 const TIER={1:['Official','ok'],2:['Major outlet','warn'],3:['Other','bad']};
 const CST={confirmed:['Confirmed','ok'],quoted:['Quote','ok'],reported:['Reported by 1 outlet','warn'],alleged:['Alleged','warn'],disputed:['Disputed','bad'],unverified:['Unverified - not used','bad']};
 const CST_ORDER=['confirmed','quoted','reported','alleged','disputed','unverified'];
@@ -595,23 +630,67 @@ async function pollJob(id, ui, steps, onDone){
   if(j.status==='done'){ onDone(j); return }
   if(j.status==='error'){ ui.title.textContent='❌ Something went wrong'; ui.step.textContent=j.error; ui.fail&&ui.fail(); return }
   setTimeout(()=>pollJob(id,ui,steps,onDone),1500) }
-const RES_STEPS=[['deciding angle','🧭 Deciding the angle and length'],['cross-checking','⚖️ Cross-checking claims across sources'],['extracting claims','🔍 Pulling out claims and checking each against its source'],['fetching sources','📥 Reading the sources']];
+const RES_STEPS=[['looking for official','🧭 Looking for official sources'],['deciding length','🧭 Deciding the length'],['deciding angle','🧭 Deciding the angle and length'],['cross-checking','⚖️ Cross-checking claims across sources'],['extracting claims','🔍 Pulling out claims and checking each against its source'],['fetching sources','📥 Reading the sources']];
 const ANA_STEPS=[['rendering','🎞️ Rendering the video (slowest step)'],['choosing','🖼️ The AI is placing photos next to the facts'],['synthesizing','🔊 Recording the voice-over'],['polishing','✨ Polishing title and thumbnail text'],['asking for a fix','🛡️ The fact-checker found problems; the script is being corrected'],['writing the','✍️ Writing the analysis script from the ledger']];
-$('#aResearch').onclick=async()=>{
-  const mode=$('input[name=amode]:checked').value; const body={};
+async function runResearch(body, btn){
+  btn.disabled=true; $('#aProg1').classList.remove('hide'); $('#aStep2').classList.add('hide'); $('#aP1Title').textContent='Researching...'; $('#aP1Bar').style.width='3%'; $('#aP1Log').textContent=''; $('#aP1Step').textContent='Starting';
+  const ui={bar:$('#aP1Bar'),log:$('#aP1Log'),step:$('#aP1Step'),title:$('#aP1Title'),fail:()=>btn.disabled=false};
+  try{ const {job}=await api('/api/analysis/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    pollJob(job,ui,RES_STEPS,j=>{ btn.disabled=false; $('#aP1Title').textContent='✅ Research done'; $('#aP1Bar').style.width='100%'; showResearch(j.result) }) }
+  catch(e){ btn.disabled=false; $('#aP1Title').textContent='❌ Could not start'; $('#aP1Step').textContent=e.message } }
+$('#aResearch').onclick=()=>{
+  const mode=$('input[name=amode]:checked').value; const body={style:'analysis'};
   if(mode==='own'){ body.headline=$('#aHeadline').value.trim(); body.urls=$('#aUrls').value; body.notes=$('#aNotes').value; if(!body.headline) return toast('Write the topic first') }
   else { if(!aTopicId) return toast('Pick a story first'); body.topic_id=aTopicId; body.urls=$('#aUrls2').value }
-  $('#aResearch').disabled=true; $('#aProg1').classList.remove('hide'); $('#aStep2').classList.add('hide'); $('#aP1Title').textContent='Researching...'; $('#aP1Bar').style.width='3%'; $('#aP1Log').textContent=''; $('#aP1Step').textContent='Starting';
-  const ui={bar:$('#aP1Bar'),log:$('#aP1Log'),step:$('#aP1Step'),title:$('#aP1Title'),fail:()=>$('#aResearch').disabled=false};
-  try{ const {job}=await api('/api/analysis/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    pollJob(job,ui,RES_STEPS,j=>{ $('#aResearch').disabled=false; $('#aP1Title').textContent='✅ Research done'; $('#aP1Bar').style.width='100%'; showResearch(j.result) }) }
-  catch(e){ $('#aResearch').disabled=false; $('#aP1Title').textContent='❌ Could not start'; $('#aP1Step').textContent=e.message } };
+  runResearch(body,$('#aResearch')) };
+// ---- explainers: topic ideas, official data, research
+let xCfg=null, xData=[], xIndLabel={}, xSeriesName={};
+async function loadXCfg(){
+  if(xCfg) return; try{ xCfg=await api('/api/explainer/config') }catch(e){ return toast('❌ '+e.message) }
+  xCfg.indicators.forEach(i=>xIndLabel[i.key]=i.label); xCfg.series.forEach(x=>xSeriesName[x.id]=x.name);
+  $('#xSeries').innerHTML='<option value="">Any format</option>'+xCfg.series.map(x=>`<option value="${x.id}" title="${esc(x.hint)}">${esc(x.name)}</option>`).join('');
+  $('#xCountries').innerHTML=xCfg.countries.map(c=>`<option value="${esc(c)}">`).join('');
+  $('#xInds').innerHTML=xCfg.indicators.map(i=>`<label><input type="checkbox" value="${i.key}">${esc(i.label)}</label>`).join('');
+  const r=$(`input[name=alang][value=${xCfg.language}]`); if(r&&anaStyle==='explainer') r.click() }
+function renderXData(){
+  $('#xDataList').innerHTML=xData.map((d,i)=>`<span class="pill ok" style="margin:2px 4px 2px 0">${esc(d.country)}: ${d.indicators.map(k=>esc(xIndLabel[k]||k)).join(', ')} <a href="#" data-i="${i}" style="margin-left:6px">×</a></span>`).join('');
+  $$('#xDataList a').forEach(a=>a.onclick=e=>{ e.preventDefault(); xData.splice(+a.dataset.i,1); renderXData() }) }
+function addXData(country, inds){
+  const ex=xData.find(d=>d.country.toLowerCase()===country.toLowerCase());
+  if(ex){ inds.forEach(k=>{ if(!ex.indicators.includes(k)) ex.indicators.push(k) }); return true }
+  if(xData.length>=4){ toast('Up to 4 countries'); return false } xData.push({country,indicators:[...inds]}); return true }
+$('#xDataAdd').onclick=()=>{ const c=$('#xCountry').value.trim(); const inds=$$('#xInds input:checked').map(i=>i.value);
+  if(!c) return toast('Type a country first'); if(!inds.length) return toast('Tick at least one indicator');
+  if(addXData(c,inds)){ $('#xCountry').value=''; $$('#xInds input').forEach(i=>i.checked=false); renderXData() } };
+function renderIdeas(ideas){
+  $('#xIdeas').innerHTML=ideas.length?ideas.map((i,k)=>`<div class="idea"><h3>${esc(i.title)}</h3>
+    <div class="row" style="margin:2px 0"><span class="pill">${esc(xSeriesName[i.series]||i.series)}</span><span class="pill ${i.difficulty==='easy'?'ok':i.difficulty==='hard'?'bad':'warn'}">${esc(i.difficulty)} to source</span></div>
+    <div style="margin:4px 0">${esc(i.question)}</div><div class="hint" style="margin:2px 0"><i>${esc(i.why)}</i></div>
+    ${i.source_hints.length?`<div class="hint" style="margin:2px 0">Read: ${i.source_hints.map(esc).join(' · ')}</div>`:''}
+    ${i.data_hooks.length?`<div class="hint" style="margin:2px 0">Chart data: ${i.data_hooks.map(h=>esc(h.country)+' ('+h.indicators.map(k=>esc(xIndLabel[k]||k)).join(', ')+')').join(' · ')}</div>`:''}
+    <button class="btn" data-k="${k}" style="margin-top:6px">Use this topic</button></div>`).join('')+'<p class="hint">Ideas are leads, not facts. Every fact in the video comes from the research step.</p>':'<div class="hint" style="margin-top:8px">No new ideas this time. Try a different focus.</div>';
+  $$('#xIdeas button').forEach(b=>b.onclick=()=>{ const i=ideas[+b.dataset.k]; $('#xTopic').value=i.title; i.data_hooks.forEach(h=>addXData(h.country,h.indicators)); renderXData();
+    toast('Topic selected. Add sources or press Research.'); $('#xTopic').scrollIntoView({behavior:'smooth',block:'center'}) }) }
+$('#xIdeasBtn').onclick=async()=>{ const b=$('#xIdeasBtn'); await loadXCfg(); b.disabled=true; b.textContent='Thinking...';
+  try{ const r=await api('/api/explainer/ideas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({focus:$('#xFocus').value,series:$('#xSeries').value,n:8})}); renderIdeas(r.ideas) }
+  catch(e){ toast('❌ '+e.message) } b.disabled=false; b.textContent='💡 Suggest topics' };
+$('#xResearch').onclick=()=>{ const body={style:'explainer',headline:$('#xTopic').value.trim(),urls:$('#xUrls').value,notes:$('#xNotes').value,discover:$('#xDiscover').checked,data:xData};
+  if(!body.headline) return toast('Write or pick a topic first'); runResearch(body,$('#xResearch')) };
+let anaStyle='analysis';
+function setAnaStyle(st){
+  anaStyle=st; $$('.only-analysis').forEach(e=>e.classList.toggle('hide',st!=='analysis')); $$('.only-explainer').forEach(e=>e.classList.toggle('hide',st!=='explainer'));
+  if(aResearch&&(aResearch.style||'analysis')!==st){ aResearch=null; $('#aStep2').classList.add('hide'); $('#aProg1').classList.add('hide') }
+  $('#aCreate').textContent=st==='explainer'?'🎬 Create explainer video':'🎬 Create analysis video';
+  const lang=st==='explainer'?(xCfg?xCfg.language:'english'):'hinglish'; const r=$(`input[name=alang][value=${lang}]`); if(r) r.click();
+  if(st==='explainer') loadXCfg() }
 function showResearch(r){
   aResearch=r; const c=r.counts||{}; const rec=r.recommend;
   $('#aSummary').innerHTML=`<b>${r.usable} usable claims</b>: ${c.confirmed||0} confirmed, ${c.quoted||0} quotes, ${c.reported||0} reported by one outlet, ${c.alleged||0} alleged, ${c.disputed||0} disputed`+(c.unverified?` · <span style="color:var(--bad)">${c.unverified} unverified (never used)</span>`:'')
     +(r.enough?'':`<div class="issue block" style="margin-top:8px">Not enough verified material (need at least 4 claims). Add more sources (official sources and major outlets work best) and run the research again.</div>`);
   renderLedger(r.ledger, $('#aLedger')); $('#aSources').innerHTML=''; $('#aSourcesBox').classList.add('hide');
   const names={neutral:'Neutral',critical:'Critical',supportive:'Complementary'};
+  if(r.style==='explainer'){ $('#aSummary').insertAdjacentHTML('beforeend',`<div class="hint" style="margin-top:6px">${r.sources_found} source${r.sources_found===1?'':'s'} read. Official data and official sites count as confirmed; a claim from a single news outlet must be credited by name in the video.</div>`);
+    $('#aRec').innerHTML=`<b>Recommended length: about ${rec.minutes} minutes.</b> <span class="hint">${esc(rec.minutes_why||'')}</span>`; $('#aLenAuto').textContent=`Recommended: ${rec.minutes} min`; $('#aStep2').classList.remove('hide'); $('#aCreate').disabled=!r.enough; $('#aStep2').scrollIntoView({behavior:'smooth'}); return }
   $('#aRec').innerHTML=`<b>Recommended: ${names[rec.stance]}, about ${rec.minutes} minutes.</b><br>${esc(rec.why)} ${esc(rec.minutes_why||'')}`+(rec.key_questions&&rec.key_questions.length?`<br><span class="hint">Questions worth answering: ${rec.key_questions.map(esc).join(' · ')}</span>`:'');
   $('#aStanceAuto').textContent='Recommended: '+names[rec.stance]; $('#aLenAuto').textContent=`Recommended: ${rec.minutes} min`;
   $('#aStep2').classList.remove('hide'); $('#aCreate').disabled=!r.enough; $('#aStep2').scrollIntoView({behavior:'smooth'}) }
@@ -625,7 +704,7 @@ $('#aPickLib').onclick=()=>openLibPicker(aLibSel, renderALibChips);
 $('#aCreate').onclick=async()=>{
   if(!aResearch||!aResearch.enough) return toast('Run the research first');
   if(!aImages.length && !aLibSel.length && !confirm('You have not chosen any photos. The video will use plain headline cards instead of photos.\n\nPress Cancel to find relevant photos first, or OK to continue without photos.')) return;
-  const fd=new FormData(); fd.append('research_id',aResearch.research_id); fd.append('stance',$('input[name=astance]:checked').value); fd.append('minutes',$('input[name=alen]:checked').value);
+  const fd=new FormData(); fd.append('research_id',aResearch.research_id); fd.append('style',anaStyle); fd.append('stance',anaStyle==='explainer'?'auto':$('input[name=astance]:checked').value); fd.append('minutes',$('input[name=alen]:checked').value);
   fd.append('language',$('input[name=alang]:checked').value); fd.append('music',$('#aMusic').value); fd.append('mode',JSON.stringify(getMode('aAppr'))); aImages.forEach(f=>fd.append('images',f)); fd.append('library_ids',JSON.stringify(aLibSel.map(x=>x.id)));
   $('#aCreate').disabled=true; $('#aProg2').classList.remove('hide'); $('#aDone').classList.add('hide'); $('#aP2Title').textContent='Creating your analysis video...'; $('#aP2Bar').style.width='3%'; $('#aP2Log').textContent=''; $('#aP2Step').textContent='Uploading...';
   $('#aProg2').scrollIntoView({behavior:'smooth'});
@@ -639,7 +718,7 @@ $('#aCreate').onclick=async()=>{
   catch(e){ $('#aCreate').disabled=false; $('#aP2Title').textContent='❌ Could not start'; $('#aP2Step').textContent=e.message } };
 async function loadVideoLedger(v,el){ const box=el.querySelector('.ledbody');
   try{ const r=await api(`/api/videos/${v.id}/ledger`); renderLedger(r.ledger, box); const a=r.analysis||{};
-    box.insertAdjacentHTML('afterbegin',`<div class="hint" style="margin:0 0 8px">Angle: <b>${esc(a.stance||'')}</b> · as of ${esc(a.as_of||'')} · every fact in the script is tied to one of these claims.</div>`) }catch(e){ box.textContent=e.message } }
+    box.insertAdjacentHTML('afterbegin',`<div class="hint" style="margin:0 0 8px">${a.style==='explainer'?'<b>Explainer</b>':'Angle: <b>'+esc(a.stance||'')+'</b>'} · as of ${esc(a.as_of||'')} · every fact in the script is tied to one of these claims.</div>`) }catch(e){ box.textContent=e.message } }
 
 // ---- photo finder (find relevant copyright-safe photos, user approves them)
 const SCOUT_STEPS=[['rating photos','⭐ Rating how well each photo fits'],['searching','🔎 Searching free photo archives'],['planning photo needs','🧠 Working out which visuals the story needs']];
@@ -746,7 +825,7 @@ async function loadDrafts(){
   const {drafts}=await api('/api/workflows'); updateDraftBadge();
   $('#drafts').innerHTML=drafts.length?'':'<div class="card hint">Nothing is waiting. When you create a video with "Ask me at each step", it shows up here after each stage.</div>';
   drafts.forEach(d=>{ const [t,c]=WF_STATUS[d.status]||[d.status,'']; const el=document.createElement('div'); el.className='card';
-    el.innerHTML=`<div class="row"><b style="font-size:16px">${esc(d.title)}</b><span class="pill ${c}">${t}</span><span class="pill">${d.kind==='analysis'?'🔎 Deep analysis':d.format==='short'?'📱 Short':'🖥️ Long'}</span>
+    el.innerHTML=`<div class="row"><b style="font-size:16px">${esc(d.title)}</b><span class="pill ${c}">${t}</span><span class="pill">${d.kind==='analysis'?(d.style==='explainer'?'📈 Explainer':'🔎 Deep analysis'):d.format==='short'?'📱 Short':'🖥️ Long'}</span>
       <span class="pill">Script: ${d.mode.script==='manual'?'I approve':'auto'} · Photos: ${d.mode.photos==='manual'?'I approve':'auto'}</span><button class="btn primary" style="margin-left:auto">${d.status==='script_review'||d.status==='media_review'?'Review':'Open'}</button></div>${d.error?`<div class="issue block">${esc(d.error)}</div>`:''}`;
     el.querySelector('button').onclick=()=>openWf(d.id); $('#drafts').append(el) }) }
 function openWf(id){ goTab('review'); wfCur=id; $('#draftList').classList.add('hide'); $('#wfDetail').classList.remove('hide'); loadWf() }
@@ -779,7 +858,7 @@ function renderScoutScript(body,d){
   const opts=(sc.title_options||[]).length?`<div class="hint" style="margin:6px 0 0">Other title ideas: ${sc.title_options.map(t=>`<a href="#" class="wf-topt">${esc(t)}</a>`).join(' · ')}</div>`:'';
   body.innerHTML=`<div class="card"><h2>Step 1 · Review the script</h2>
     <p class="hint">Read it, edit anything, or ask the AI to change it. Nothing is spent on the voice until you approve the script and the photos.${d.kind==='analysis'?' Edits are fact-checked again automatically: every fact must still cite its ledger claims.':''}</p>
-    <div class="hint" style="margin:0 0 8px">${sc.words} words · about ${Math.round(sc.est_seconds/60*10)/10} minutes${sc.stance?` · angle: <b>${esc(sc.stance)}</b>`:''}${d.params.language?` · ${d.params.language==='hindi'?'Hindi':'Hinglish'}`:''}</div>
+    <div class="hint" style="margin:0 0 8px">${sc.words} words · about ${Math.round(sc.est_seconds/60*10)/10} minutes${sc.style==='explainer'?' · <b>explainer</b>':sc.stance?` · angle: <b>${esc(sc.stance)}</b>`:''}${d.params.language?` · ${LANG_NAME[d.params.language]||d.params.language}`:''}</div>
     <div id="wfCheck">${chk?(bad?`<div class="issue block">🚫 The fact check found ${chk.violations.length} problem(s). You cannot approve until they are fixed:<br>${chk.violations.slice(0,12).map(esc).join('<br>')}</div>`:'<div class="issue" style="border-color:var(--ok);color:var(--ok)">✅ Passed the automatic fact check.</div>')+chk.warnings.slice(0,6).map(w=>`<div class="issue">⚠️ ${esc(w)}</div>`).join(''):''}</div>
     <label class="l">Video title</label><input type="text" id="wfTitle" value="${esc(sc.title)}">${opts}
     ${scenes}

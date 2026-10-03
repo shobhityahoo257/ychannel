@@ -10,8 +10,8 @@ from .models import Asset, Scene, Shot
 MOTIONS = ["zoom_in", "pan_right", "zoom_out", "pan_left"]
 MIN_SHOT, MAX_SHOT = 2.6, 7.0
 
-SYSTEM = """You are the picture editor of a TV news channel. You receive the scenes of a Hindi news
-script and a set of candidate photos (some supplied by the channel owner, some stock).
+SYSTEM = """You are the picture editor of a TV news channel. You receive the scenes of a news or explainer
+script (any language) and a set of candidate photos (some supplied by the channel owner, some stock).
 For every scene choose 1-3 photos that best illustrate what is being said, and arrange them in the order they should appear.
 Rules:
 - Prefer the owner's photos (kind=user) whenever they are relevant.

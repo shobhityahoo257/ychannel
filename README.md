@@ -119,9 +119,31 @@ section changes (or your own tracks in `assets/music`), chapters and a tiered so
 Every video keeps its ledger (My videos -> Fact ledger & sources). Source quality: official (`*.gov.in`, PIB, Sansad, ECI, RBI, courts) > major
 outlets and agencies > everything else (blogs and your own notes can never be the only support for a fact). Edit the lists under `analysis:` in `config.yaml`.
 
+## Economics & business explainers (English, for a global audience)
+A second kind of video that needs **no news and no video clips**: evergreen, documentary-style explainers ("How central banks fight inflation",
+"Why a currency collapsed", "The rise and fall of a company") made from official sources, official data, and archival photos. Open the **Explainers**
+tab, or use the commands `ideas` and `explainer`.
+1. **Pick a topic.** *Suggest topics* proposes evergreen ideas in six formats (How it works, Why it happened, Rise and fall, Country in numbers,
+   Myth vs data, Who pays), skipping anything already suggested or made. Ideas never contain numbers or facts; they are leads, and every fact comes from step 2.
+2. **Research & fact-check.** Sources come from three places, all checked by the same code-verified ledger as deep analysis:
+   - **Official data** - World Bank series (GDP growth, inflation, unemployment, trade, debt, FDI, reserves, population ...) for any country. No key needed.
+     Each series becomes an official source, so its numbers are *Confirmed*, and it can be drawn as a **chart** in the video.
+   - **Sources found for you** - the app reads the Wikipedia articles on the topic and follows the *links they cite*, keeping only official and major-outlet pages
+     (IMF, World Bank, OECD, central banks, statistics offices, SEC, Reuters, FT, Bloomberg ...). Wikipedia itself is never used as a source of facts.
+   - **Your own links and notes** (a claim from a blog or from your notes alone is never usable).
+3. **Create** with the usual choice of approving each step. The script follows a teaching structure: hook, setup, background, **mechanism** (how it works),
+   **evidence** (numbers and charts), impact, **counter-view** (limits and other views), takeaway. On top of the deep-analysis rules the checker also:
+   blocks anything that reads like investment advice or promises returns, blocks copying 8+ words from a source, blocks invented numbers, and allows
+   plain-language *concept* beats (analogies) only if they contain no digits, dates or names and make up under 30% of the narration.
+Output: 5-12 minutes, 16:9, English voice (set `explainer.language`), a calm music bed, chapters, a tiered source list and an "education, not advice"
+note in the description, uploaded as *Education* with its own tags and playlists. Everything specific to explainers (channel name and colours,
+YouTube category, playlists, default language) is under `explainer:` in `config.yaml`; set the channel name and handle to your own.
+Notes: run a separate install (own `output/` folder and YouTube login) for a second channel; explainers keep their own playlist list and never link to
+your news videos. PDF sources are not read yet; paste the key passage as a note, or use the HTML page of the same report.
+
 ## Languages
 `content.language` in `config.yaml` (and a switch in the web app): **Hinglish** (default; Hindi grammar with English words in Roman script, e.g.
-"Kya sarkar ne ek hi din mein apna stand badal diya?") or **Hindi** (Devanagari). It controls the script, captions, on-screen labels, thumbnails,
+"Kya sarkar ne ek hi din mein apna stand badal diya?"), **Hindi** (Devanagari) or **English** (plain, global-audience English; the default for explainers). It controls the script, captions, on-screen labels, thumbnails,
 descriptions, playlists names and the voice instructions. If a voice pronounces Roman Hinglish oddly, try another voice or the Hindi setting.
 
 ## Study a reference video
@@ -165,6 +187,8 @@ delivery techniques worth borrowing, and a list of things our fact rules would n
 | `publish [--publish-at 2026-10-03T07:30:00Z]` | upload approved videos |
 | `insights [--sync]` | what worked on your channel; lessons feed the next scripts |
 | `deep --headline ... --url ...` | researched, fact-checked analysis video (`--research-only` to stop after the ledger) |
+| `ideas [--focus "..."]` | suggest evergreen explainer topics (never repeats) |
+| `explainer --topic ... --data India:gdp_growth --url ...` | researched, fact-checked economics / business explainer (`--research-only` to stop after the ledger) |
 | `study transcript.txt` | analyse a reference video's structure and techniques |
 | `breaking [--once] [--dry-run]` | watch for breaking political news and prepare a Short for approval |
 | `playlists` | create your topic/format playlists on YouTube |

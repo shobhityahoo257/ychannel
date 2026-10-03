@@ -25,13 +25,21 @@ NEEDS_ATTRIBUTION = {"reported", "quoted", "alleged", "disputed"}
 DEFAULT_TIER1 = ["pib.gov.in", "pmindia.gov.in", "sansad.in", "eci.gov.in", "eci.nic.in", "rbi.org.in",
                  "indiabudget.gov.in", "sci.gov.in", "main.sci.gov.in", "egazette.gov.in", "mha.gov.in",
                  "finmin.nic.in", "mea.gov.in", "niti.gov.in", "loksabha.nic.in", "rajyasabha.nic.in",
-                 "prsindia.org", "data.gov.in", "mospi.gov.in"]
+                 "prsindia.org", "data.gov.in", "mospi.gov.in",
+                 # international institutions and statistical agencies (economics / business explainers)
+                 "imf.org", "worldbank.org", "oecd.org", "bis.org", "wto.org", "un.org", "unctad.org", "ilo.org", "fao.org",
+                 "ecb.europa.eu", "europa.eu", "federalreserve.gov", "treasury.gov", "bls.gov", "bea.gov", "census.gov",
+                 "sec.gov", "eia.gov", "fred.stlouisfed.org", "bankofengland.co.uk", "ons.gov.uk", "boj.or.jp",
+                 "nber.org", "cia.gov", "iea.org", "opec.org", "congress.gov", "gov.uk"]
 DEFAULT_TIER2 = ["ptinews.com", "aninews.in", "reuters.com", "apnews.com", "thehindu.com", "indianexpress.com",
                  "hindustantimes.com", "ndtv.com", "khabar.ndtv.com", "bbc.com", "bbc.co.uk", "timesofindia.indiatimes.com",
                  "livemint.com", "business-standard.com", "economictimes.indiatimes.com", "theprint.in", "scroll.in",
                  "thewire.in", "deccanherald.com", "telegraphindia.com", "newindianexpress.com", "outlookindia.com",
                  "indiatoday.in", "aajtak.in", "jagran.com", "bhaskar.com", "amarujala.com", "livehindustan.com",
-                 "jansatta.com", "dw.com", "aljazeera.com", "barandbench.com", "livelaw.in"]
+                 "jansatta.com", "dw.com", "aljazeera.com", "barandbench.com", "livelaw.in",
+                 "ft.com", "wsj.com", "bloomberg.com", "economist.com", "cnbc.com", "nytimes.com", "washingtonpost.com",
+                 "theguardian.com", "npr.org", "marketwatch.com", "barrons.com", "axios.com", "britannica.com", "hbr.org",
+                 "brookings.edu", "cfr.org", "piie.com", "mckinsey.com", "statista.com", "ourworldindata.org"]
 
 
 FRIENDLY = {
@@ -46,6 +54,16 @@ FRIENDLY = {
     "theprint.in": "ThePrint", "scroll.in": "Scroll", "thewire.in": "The Wire", "indiatoday.in": "India Today",
     "aajtak.in": "Aaj Tak", "jagran.com": "Dainik Jagran", "bhaskar.com": "Dainik Bhaskar", "livelaw.in": "LiveLaw",
     "barandbench.com": "Bar and Bench", "deccanherald.com": "Deccan Herald", "dw.com": "DW",
+    "imf.org": "IMF", "worldbank.org": "World Bank", "data.worldbank.org": "World Bank", "oecd.org": "OECD", "bis.org": "BIS",
+    "wto.org": "WTO", "un.org": "United Nations", "unctad.org": "UNCTAD", "ilo.org": "ILO", "fao.org": "FAO",
+    "ecb.europa.eu": "European Central Bank", "federalreserve.gov": "US Federal Reserve", "treasury.gov": "US Treasury",
+    "bls.gov": "US Bureau of Labor Statistics", "bea.gov": "US Bureau of Economic Analysis", "census.gov": "US Census Bureau",
+    "sec.gov": "US SEC", "eia.gov": "US EIA", "fred.stlouisfed.org": "FRED", "bankofengland.co.uk": "Bank of England",
+    "ons.gov.uk": "UK ONS", "boj.or.jp": "Bank of Japan", "nber.org": "NBER", "iea.org": "IEA", "opec.org": "OPEC",
+    "ft.com": "Financial Times", "wsj.com": "Wall Street Journal", "bloomberg.com": "Bloomberg", "economist.com": "The Economist",
+    "cnbc.com": "CNBC", "nytimes.com": "The New York Times", "washingtonpost.com": "The Washington Post",
+    "theguardian.com": "The Guardian", "npr.org": "NPR", "britannica.com": "Britannica", "hbr.org": "Harvard Business Review",
+    "brookings.edu": "Brookings", "cfr.org": "Council on Foreign Relations", "ourworldindata.org": "Our World in Data",
 }
 
 
@@ -63,14 +81,23 @@ def outlet_of(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+_ARCHIVE = re.compile(r"^https?://web\.archive\.org/web/\d+[a-z_]*/(https?://.+)$", re.I)
+
+
+def original_url(url: str) -> str:
+    """A web.archive.org copy is judged by the site it is a copy of."""
+    m = _ARCHIVE.match(url or "")
+    return m.group(1) if m else url
+
+
 def classify_tier(url: str, tier1: list[str] | None = None, tier2: list[str] | None = None) -> int:
-    host = outlet_of(url)
+    host = outlet_of(original_url(url))
     if not host:
         return 3
     for d in tier1 or DEFAULT_TIER1:
         if host == d or host.endswith("." + d):
             return 1
-    if host.endswith(".gov.in") or host.endswith(".nic.in"):
+    if host.endswith(".gov.in") or host.endswith(".nic.in") or host.endswith(".gov") or ".gov." in host:
         return 1
     for d in tier2 or DEFAULT_TIER2:
         if host == d or host.endswith("." + d):
@@ -87,6 +114,7 @@ class Source:
     tier: int                  # 1 official/primary, 2 major outlet/agency, 3 other
     published: str = ""
     text: str = ""
+    series: dict | None = None  # {"label", "unit", "country", "points": [[year, value], ...]} for data sources (charts)
 
 
 @dataclass

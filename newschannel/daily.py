@@ -52,16 +52,18 @@ def publish_one(cfg: Config, store: Store, meta: dict[str, Any], publish_at: str
     """Upload one approved video, file it into playlists, add 'watch next' links, and record it in
     history (used for de-duplication, analytics and end-screen suggestions). Playlist problems never
     undo the upload; they are recorded in meta['playlist_error']."""
-    from . import playlists as P
+    from . import explainer, playlists as P
     from .youtube import service, upload
 
+    cfg = explainer.profile_copy(cfg, meta.get("style", ""), meta.get("language"))     # explainers use their own playlists / category
     pl = cfg.get("playlists", {})
-    history = store.history()
+    style = explainer.channel_of(meta.get("style"))
+    history = [h for h in store.history() if explainer.channel_of(h.get("style")) == style]     # never link across channels
     send = dict(meta)
     pls, pids, names = None, [], []
     if pl.get("enabled", True):
         try:
-            pls = P.Playlists(service(), store.root / "playlists.json")
+            pls = P.Playlists(service(), store.root / (f"playlists_{style}.json" if style else "playlists.json"))
             names = P.target_playlists(meta, pl)
             pids = [pls.ensure(n, privacy=pl.get("privacy", "public")) for n in names]
             rel = P.related(history, meta.get("category", ""), n=pl.get("watch_next_links", 3))
@@ -90,7 +92,7 @@ def publish_one(cfg: Config, store: Store, meta: dict[str, Any], publish_at: str
     store.set_status(meta["id"], "published", video_id=vid, playlists=names, playlist_error="; ".join(problems))
     store.add_history(meta["title"], meta["topic"], vid, hook=meta.get("hook", ""), format=meta["format"],
                       duration=meta.get("duration"), run_id=meta["id"], category=meta.get("category", ""),
-                      playlists=names)
+                      playlists=names, style=meta.get("style", ""))
     return vid
 
 

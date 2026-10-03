@@ -83,7 +83,8 @@ def fetch_article(url: str, timeout: int = 20) -> tuple[str, str, str]:
 
 def gather_sources(cfg: Any, topic: Topic, urls: list[str] | None = None, notes: str = "",
                    max_sources: int = 10, log: Callable[[str], None] = print,
-                   fetch: Callable[[str], tuple[str, str, str]] | None = None) -> list[Source]:
+                   fetch: Callable[[str], tuple[str, str, str]] | None = None,
+                   data_sources: list[Source] | None = None) -> list[Source]:
     fetch = fetch or fetch_article
     sc = cfg.get("analysis", {}).get("sources", {})
     t1, t2 = sc.get("tier1"), sc.get("tier2")
@@ -105,6 +106,9 @@ def gather_sources(cfg: Any, topic: Topic, urls: list[str] | None = None, notes:
             log(f"[research] too little text at {u}; skipped")
             continue
         out.append(Source(f"S{len(out) + 1}", u, title or u, outlet_of(u), classify_tier(u, t1, t2), published, text))
+    for d in data_sources or []:      # official data series (World Bank ...) come with their own text and chart data
+        d.id = f"S{len(out) + 1}"
+        out.append(d)
     if notes.strip():       # your own notes are never enough on their own: weak tier unless other sources back them
         out.append(Source(f"S{len(out) + 1}", "", "User notes", "user notes", 3, "", notes.strip()[:MAX_CHARS]))
     return out

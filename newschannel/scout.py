@@ -201,6 +201,11 @@ Rules:
 - Each visual gets 1-3 short ENGLISH search queries. Archive search is keyword-based: use the proper name or a plain description,
   not poetic phrases. Avoid generic stock cliches (handshakes, light bulbs) unless the story is about that.
 - Describe in `label` what the picture should show, and in `avoid` what would make it misleading or wrong."""
+EXPLAINER_PLAN = """
+This is an economics / business EXPLAINER, not breaking news. Prefer documentary and archival visuals that make the idea concrete:
+the buildings of central banks, stock exchanges and ministries, ports, factories, farms, mines, trading floors, markets, maps, banknotes and
+objects, the process or industry being explained, and historic photographs from the period. A map or a place usually beats a portrait.
+Avoid company logos, product shots that look like adverts, and photos of private individuals."""
 PLAN_SCHEMA = {"type": "object", "properties": {"needs": {"type": "array", "items": {
     "type": "object", "properties": {
         "label": {"type": "string"}, "kind": {"type": "string", "enum": ["person", "place", "institution", "event", "document", "crowd", "concept"]},
@@ -208,11 +213,11 @@ PLAN_SCHEMA = {"type": "object", "properties": {"needs": {"type": "array", "item
     "required": ["label", "kind", "queries"]}}}, "required": ["needs"]}
 
 
-def plan_needs(client: Any, model: str, story: str, hints: list[str] | None = None) -> list[dict[str, Any]]:
+def plan_needs(client: Any, model: str, story: str, hints: list[str] | None = None, style: str = "") -> list[dict[str, Any]]:
     needs: list[dict[str, Any]] = []
     if client is not None:
         try:
-            res = call_tool(client, model, PLAN_SYSTEM, f"STORY:\n{story[:6000]}\n\nHints from the script: {', '.join(hints or [])[:400]}",
+            res = call_tool(client, model, PLAN_SYSTEM + (EXPLAINER_PLAN if style == "explainer" else ""), f"STORY:\n{story[:6000]}\n\nHints from the script: {', '.join(hints or [])[:400]}",
                             "plan_photos", PLAN_SCHEMA, 2000)
             needs = res.get("needs", [])[:8]
         except Exception as exc:
@@ -400,14 +405,15 @@ def _write(folder: Path, result: dict[str, Any]) -> None:
 def scout(cfg: Config, client: Any, story: str, hints: list[str] | None = None, extra_queries: list[str] | None = None,
           folder: Path | None = None, log: Callable[[str], None] = print,
           providers: dict[str, Callable[..., list[Candidate]]] | None = None,
-          download: Callable[[str], bytes] | None = None, needs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+          download: Callable[[str], bytes] | None = None, needs: list[dict[str, Any]] | None = None,
+          style: str = "") -> dict[str, Any]:
     if folder is None:
         folder = Path(cfg.root) / "output" / "_scout" / uuid.uuid4().hex[:10]
     sid = folder.name
     folder.mkdir(parents=True, exist_ok=True)
     if needs is None:
         log("planning photo needs…")
-        needs = plan_needs(client, cfg.models()[0], story, hints)
+        needs = plan_needs(client, cfg.models()[0], story, hints, style)
     for q in extra_queries or []:
         needs.append({"id": f"x{len(needs) + 1}", "label": q, "kind": "concept", "named_entity": "", "queries": [q], "avoid": ""})
     cands, status = collect(cfg, client, needs, folder / "thumbs", log, providers, download)

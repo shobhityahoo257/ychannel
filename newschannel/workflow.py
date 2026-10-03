@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 from . import analysis as analysis_mod
 from . import clips as clipmod
-from . import deep, learn, planner
+from . import deep, explainer, learn, planner
 from .config import Config
 from .i18n import t as label
 from .library import Library
@@ -110,9 +110,12 @@ def split_budget(bad: list[str], soft: list[str]) -> tuple[list[str], list[str]]
 
 
 def apply_language(cfg: Config, wf: Workflow) -> None:
-    lang = wf.params().get("language")
+    """Language of this video, plus the channel look / playlists / category when it is an explainer."""
+    p = wf.params()
+    lang = p.get("language")
     if lang:
         cfg.data.setdefault("content", {})["language"] = lang
+    explainer.apply_profile(cfg, p.get("style", ""), lang)
 
 
 def _topic(wf: Workflow):
@@ -137,7 +140,7 @@ def stage_script(cfg: Config, client: Any, wf: Workflow, log: Callable[[str], No
     lang, model = cfg.lang, cfg.models()[0]
     st, p = wf.state, wf.params()
     wf.save(status="script_running", error="")
-    insights = learn.prompt_hint(wf.store)
+    insights = learn.prompt_hint(wf.store, wf.params().get("style", ""))
     cats = cfg.get("playlists", {}).get("categories", [])
     previous: Script | None = wf.script() if instruction and (wf.dir / "script.json").exists() else None
     if st["kind"] == "news":
@@ -158,21 +161,23 @@ def stage_script(cfg: Config, client: Any, wf: Workflow, log: Callable[[str], No
         pk = improve(client, model, script, topic, insights, cats, lang)
     else:
         ledger, rec = analysis_mod.load_research(wf.store, p["research_id"])
-        stance = rec["stance"] if p.get("stance") in ("auto", "", None) else p["stance"]
+        style = p.get("style") or "analysis"
+        stance = "neutral" if style == "explainer" else rec["stance"] if p.get("stance") in ("auto", "", None) else p["stance"]
         minutes = rec["minutes"] if p.get("minutes") in ("auto", "", None) else float(p["minutes"])
         minutes = max(float(cfg.get("analysis", {}).get("min_minutes", 4.0)), min(20.0, minutes))
         wf.save(params={**p, "stance": stance, "minutes": minutes, "as_of": ledger.as_of})
         ledger.save(wf.dir / "ledger.json")
-        log(f"writing the {stance} analysis script ({minutes:g} min)…")
+        log(f"writing the {'explainer' if style == 'explainer' else stance + ' analysis'} script ({minutes:g} min)…")
         prev_raw = wf.raw() if instruction and (wf.dir / "analysis_raw.json").exists() else None
         w = deep.write_analysis(client, model, ledger, stance, minutes, lang, cfg["channel"]["name"], cfg.get("analysis", {}),
-                                insights, ledger.as_of, log, instruction, prev_raw)
+                                insights, ledger.as_of, log, instruction, prev_raw, style)
         script = w.script
         (wf.dir / "analysis_raw.json").write_text(json.dumps(w.raw, ensure_ascii=False, indent=1), encoding="utf-8")
         viol, warn = split_budget(w.violations, w.warnings)
         (wf.dir / "deep_check.json").write_text(json.dumps({"violations": viol, "warnings": warn}), encoding="utf-8")
         log("polishing title and thumbnail text…")
-        pk = improve(client, model, script, analysis_mod.ledger_topic(ledger), insights, cats, lang, rewrite_hook=False)
+        pk = improve(client, model, script, analysis_mod.ledger_topic(ledger), insights, cats, lang, rewrite_hook=False,
+                     style="explainer" if style == "explainer" else "")
     save_json(wf.dir / "packaging.json", pk)
     save_json(wf.dir / "script.json", script)
     wf.save(status="script_review", title=script.title)
@@ -182,6 +187,7 @@ def describe_script(wf: Workflow) -> dict[str, Any]:
     script = wf.script()
     st = wf.state
     out: dict[str, Any] = {"title": script.title, "title_options": [], "scenes": [], "stance": script.stance,
+                           "style": script.style or "analysis",
                            "words": script.word_count, "est_seconds": round(estimate_seconds(script))}
     pkp = wf.dir / "packaging.json"
     if pkp.exists():
@@ -214,10 +220,11 @@ def save_script_edits(cfg: Config, wf: Workflow, edits: dict[str, Any]) -> dict[
                 if j < len(sc.get("beats", [])) and isinstance(b.get("text"), str):
                     sc["beats"][j]["text"] = b["text"].strip()
         p = wf.params()
+        style = p.get("style") or "analysis"
         bad, soft = deep.lint(raw["scenes"], ledger, p["stance"], p["minutes"], cfg.get("analysis", {}).get("banned_patterns"),
-                              cfg.get("analysis", {}).get("warn_patterns"))
+                              cfg.get("analysis", {}).get("warn_patterns"), style)
         bad, soft = split_budget(bad, soft)
-        script = deep.to_script(raw, ledger, p["stance"], cfg.lang)
+        script = deep.to_script(raw, ledger, p["stance"], cfg.lang, style)
         (wf.dir / "analysis_raw.json").write_text(json.dumps(raw, ensure_ascii=False, indent=1), encoding="utf-8")
         (wf.dir / "deep_check.json").write_text(json.dumps({"violations": bad, "warnings": soft}), encoding="utf-8")
         save_json(wf.dir / "script.json", script)
@@ -414,7 +421,8 @@ def list_drafts(store: Store) -> list[dict[str, Any]]:
     for p in sorted(store.root.glob("*/workflow.json"), reverse=True):
         st = json.loads(p.read_text(encoding="utf-8"))
         if st.get("status") != "done":
-            out.append({k: st.get(k) for k in ("id", "kind", "status", "title", "format", "mode", "created", "error")})
+            out.append({k: st.get(k) for k in ("id", "kind", "status", "title", "format", "mode", "created", "error")}
+                       | {"style": (st.get("params") or {}).get("style", "")})
     return out
 
 

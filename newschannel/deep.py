@@ -21,7 +21,14 @@ from .models import Scene, Script
 
 WORDS_PER_SEC = 2.4
 SECTIONS = ["hook", "recap", "context", "positions", "analysis", "counterpoint", "scenarios", "close"]
+EXPLAINER_SECTIONS = ["hook", "setup", "background", "mechanism", "evidence", "impact", "counterview", "takeaway"]
 STANCES = ["neutral", "critical", "supportive"]
+STYLES = ["analysis", "explainer"]
+CARD_TYPES = ["quote", "number", "timeline", "sources", "chart"]
+
+
+def sections_for(style: str) -> list[str]:
+    return EXPLAINER_SECTIONS if style == "explainer" else SECTIONS
 
 # ----------------------------------------------------------------------------- 1. claim extraction
 EXTRACT_SYSTEM = """You extract verifiable claims from ONE source text (a news article or an official document).
@@ -35,8 +42,15 @@ For each claim give:
 - evidence: ONE sentence or passage copied EXACTLY, character for character, from the text that supports the claim.
 - date: the date it refers to, as written in the text, if any.
 Every number in `text` must appear in `evidence`. Skip opinions of the author, adjectives and loaded language.
-Prioritise what matters for political analysis: decisions, official actions, numbers, dates, statements, reactions, legal steps.
+{focus}
 Return at most {n} claims."""
+
+FOCUS = {
+    "analysis": "Prioritise what matters for political analysis: decisions, official actions, numbers, dates, statements, reactions, legal steps.",
+    "explainer": ("Prioritise what an explainer needs: definitions, how a mechanism works as the source itself states it, causes and effects "
+                  "the source itself draws, dates and turning points, figures with their unit and year, and statements by named people or institutions. "
+                  "For lists of yearly data, extract the figures that show the trend (start, end, peak, trough) with their years."),
+}
 
 EXTRACT_SCHEMA = {"type": "object", "properties": {"claims": {"type": "array", "items": {
     "type": "object", "properties": {
@@ -53,8 +67,8 @@ MERGE_SCHEMA = {"type": "object", "properties": {"groups": {"type": "array", "it
     "required": ["ids"]}}}, "required": ["groups"]}
 
 
-def extract_claims(client: Any, model: str, source: Source, max_claims: int = 25) -> list[dict[str, Any]]:
-    res = call_tool(client, model, EXTRACT_SYSTEM.format(n=max_claims),
+def extract_claims(client: Any, model: str, source: Source, max_claims: int = 25, style: str = "analysis") -> list[dict[str, Any]]:
+    res = call_tool(client, model, EXTRACT_SYSTEM.format(n=max_claims, focus=FOCUS.get(style, FOCUS["analysis"])),
                     f"Source: {source.title} ({source.outlet})\n\nTEXT:\n{source.text}", "submit_claims",
                     EXTRACT_SCHEMA, 6000)
     return res.get("claims", [])[:max_claims]
@@ -81,13 +95,13 @@ def merge_groups(client: Any, model: str, claims: list[Claim]) -> list[dict[str,
 
 
 def build_ledger(client: Any, model: str, topic: str, sources: list[Source], as_of: str = "",
-                 log: Callable[[str], None] = print) -> Ledger:
+                 log: Callable[[str], None] = print, style: str = "analysis") -> Ledger:
     ledger = Ledger(topic=topic, sources=sources, as_of=as_of)
     raw: list[Claim] = []
     for s in sources:
         log(f"extracting claims from {s.outlet}…")
         try:
-            items = extract_claims(client, model, s)
+            items = extract_claims(client, model, s, style=style)
         except Exception as exc:
             log(f"[deep] extraction failed for {s.outlet}: {exc}")
             continue
@@ -150,8 +164,15 @@ def ledger_brief(ledger: Ledger, limit: int = 60) -> str:
     return "\n".join(rows)
 
 
-def recommend(client: Any, model: str, ledger: Ledger) -> dict[str, Any]:
+def recommend_explainer_minutes(n_usable: int) -> int:
+    return 5 if n_usable < 8 else 7 if n_usable < 14 else 9 if n_usable < 22 else 11 if n_usable < 32 else 12
+
+
+def recommend(client: Any, model: str, ledger: Ledger, style: str = "analysis") -> dict[str, Any]:
     n = len(ledger.usable())
+    if style == "explainer":                    # explainers explain; they do not take a side, so only the length is chosen
+        return {"stance": "neutral", "why": "An explainer lays out how something works and the main views, without taking a side.",
+                "minutes": recommend_explainer_minutes(n), "minutes_why": f"{n} usable claims.", "key_questions": []}
     fallback = {"stance": "neutral", "why": "Not enough evidence to lean either way, so staying neutral.",
                 "minutes": recommend_minutes(n), "minutes_why": f"{n} usable claims.", "key_questions": []}
     if client is None or n == 0:
@@ -210,6 +231,46 @@ use it when you introduce the reporting). The card content is filled from the le
 Also give per scene: section, headline (max 50 chars), visual_query (2-4 English words for a stock photo, never a person's name).
 Title: honest, curiosity-driven, max 70 chars. Description: 2-3 lines."""
 
+EXPLAINER_SYSTEM = """You write a YouTube explainer for a global economics-and-business channel: a documentary narrator who makes one
+topic clear and interesting for curious non-experts. It is NOT a news bulletin and NOT investment advice - it teaches how something works,
+why it happened and what it means. You may use ONLY the claims in the ledger for facts, numbers, dates and names.
+
+{lang_rules}
+Always write numbers as digits with their unit (so they can be fact-checked), e.g. "7 percent", "US$2.5 trillion".
+Write in your OWN words: never copy 8 or more consecutive words from a source or from a claim's wording.
+
+STRUCTURE - scenes in this order (a scene is ~20-35 seconds; several scenes per section where useful):
+ hook (1 scene: a surprising verified fact or a puzzling question + what the viewer will understand by the end) ->
+ setup (why this matters, the question in plain words) -> background (how we got here: dated turning points, use a timeline card) ->
+ mechanism (HOW it works, step by step, one idea per scene; define each term the first time you use it) ->
+ evidence (what the data shows: use number and chart cards; compare, do not just list) ->
+ impact (who gains, who loses, what changes - only effects the ledger supports) ->
+ counterview (the limits of this explanation, other views or open questions; if the ledger has none, say plainly what we could not find) ->
+ takeaway (3 sentences: what to remember, what to watch, a question for the comments, subscribe).
+Teaching craft: open loops and pay them off, one new idea per scene, a concrete example before the abstraction, a fresh visual every scene,
+plain words, no jargon without a definition. Make the viewer feel they now understand something they did not before.
+
+EVERY scene is a list of beats. Each beat has a type:
+ fact (states a ledger claim; cite claim_ids) | quote (reports a statement; cite the quote claim; any words in "double quotes" must be word-for-word from the ledger) |
+ analysis (your reasoning or connection between facts; cite the claim_ids it rests on; phrase it as interpretation: "this suggests", "one reading is") |
+ concept (a plain-language explanation of a general idea or an everyday analogy, e.g. how a thermostat resembles interest rates. It must contain
+   NO digits, NO dates and NO names of real people, companies or countries; it carries no claim ids. Use it sparingly: at most about a quarter of the narration) |
+ transition / question / cta (no claims, no facts, no numbers) | gap ("we could not find X": allowed without claims).
+Rules the checker enforces automatically:
+ - a fact/quote beat with claim status reported / alleged / quoted / disputed MUST name the outlet or speaker in `attributed_to` AND in the beat text
+   (use the "attribute-as" names listed per claim); disputed claims: say the reports differ and cite both.
+ - numbers must come from the cited claims. No invented numbers, dates, names or quotes. Do not do your own arithmetic on figures
+   (no new percentages, differences or multiples): state the figures the ledger gives and let the viewer see the comparison.
+ - never give investment, trading or personal-finance instructions ("you should buy..."), never promise returns, never present a forecast as certain
+   (use "could", "would", "if"). Never insult people, mind-read ("he is scared") or use hearsay ("sources say").
+Cards: for a scene you may add card = {{type: quote|number|timeline|sources|chart, claim_ids: [...], label: short label}} - quote needs a quote claim,
+number a claim with a number, timeline 3-6 claims that have dates, sources shows the outlets and headlines behind the cited claims,
+chart draws the whole data series behind the cited claims (only for claims that come from a DATA SERIES listed below; to compare countries cite claims from
+series with the same indicator). The card content is filled from the ledger by code.
+Also give per scene: section, headline (max 50 chars), visual_query (2-4 English words for an archival or stock photo of the place, object or
+process - never a person's name).
+Title: honest, curiosity-driven, max 70 chars, in the style "Why ...", "How ...", "The real story of ..." only if the video delivers. Description: 2-3 lines."""
+
 WRITE_SCHEMA = {"type": "object", "properties": {
     "title": {"type": "string"}, "description": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}},
     "scenes": {"type": "array", "items": {"type": "object", "properties": {
@@ -224,6 +285,26 @@ WRITE_SCHEMA = {"type": "object", "properties": {
             "attributed_to": {"type": "string"}}, "required": ["type", "text"]}}},
         "required": ["section", "headline", "beats"]}}},
     "required": ["title", "description", "tags", "scenes"]}
+
+def write_schema(style: str = "analysis") -> dict[str, Any]:
+    import copy
+    sch = copy.deepcopy(WRITE_SCHEMA)
+    item = sch["properties"]["scenes"]["items"]
+    item["properties"]["section"]["enum"] = sections_for(style)
+    item["properties"]["card"]["properties"]["type"]["enum"] = ["none", *CARD_TYPES]
+    item["properties"]["beats"]["items"]["properties"]["type"]["enum"] = (
+        ["fact", "quote", "analysis", "concept", "transition", "question", "cta", "gap"] if style == "explainer"
+        else ["fact", "quote", "analysis", "transition", "question", "cta", "gap"])
+    return sch
+
+
+EXPLAINER_BLOCK = [
+    r"\b(you should (buy|sell|invest|short|put your money)|buy (it |this |the stock )?now|sell (it |this )?now|guaranteed (returns?|profits?|gains?)|"
+    r"risk[- ]free|can'?t lose|get rich|to the moon|double your money)\b",
+    r"\b(i|we) (recommend|advise) (you )?(buy|sell|invest)",
+]
+EXPLAINER_WARN = [r"\b(will (definitely|certainly|surely|inevitably) \w+|is (definitely |certainly )?going to (crash|soar|collapse|explode|skyrocket))\b",
+                  r"\b(always|never) (happens?|works?|fails?)\b"]
 
 DEFAULT_BLOCK = [
     r"\b(ghabra\w*|dar gay[ei]|darr gay[ei]|dara hua|sweat\w*|paseen\w*|scared|afraid|terrified|panick?\w*|trembl\w*)\b",
@@ -259,26 +340,52 @@ def words_budget(minutes: float) -> tuple[int, int]:
     return int(target * 0.75), int(target * 1.2)
 
 
+def _grams(text: str, n: int) -> set[tuple[str, ...]]:
+    w = re.findall(r"\w+", text.lower())
+    return {tuple(w[i:i + n]) for i in range(len(w) - n + 1)}
+
+
+def _unknown_names(text: str, known: str) -> list[str]:
+    """Capitalised words in the middle of a sentence that appear nowhere in the ledger (possible invented names)."""
+    out: list[str] = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        for w in re.findall(r"\b[A-Z][a-z]{3,}\b", sentence.split(" ", 1)[1] if " " in sentence else ""):
+            if w.lower() not in known:
+                out.append(w)
+    return list(dict.fromkeys(out))
+
+
 def lint(res_scenes: list[dict[str, Any]], ledger: Ledger, stance: str, minutes: float,
-         block: list[str] | None = None, warn: list[str] | None = None) -> tuple[list[str], list[str]]:
+         block: list[str] | None = None, warn: list[str] | None = None, style: str = "analysis") -> tuple[list[str], list[str]]:
     """Return (violations, warnings). Violations make the script invalid."""
     bad: list[str] = []
     soft: list[str] = []
-    blk = [re.compile(p, re.I) for p in (block or DEFAULT_BLOCK)]
-    wrn = [re.compile(p, re.I) for p in (warn or DEFAULT_WARN)]
-    total_words = 0
+    explainer = style == "explainer"
+    blk = [re.compile(p, re.I) for p in (block or DEFAULT_BLOCK) + (EXPLAINER_BLOCK if explainer else [])]
+    wrn = [re.compile(p, re.I) for p in (warn or DEFAULT_WARN) + (EXPLAINER_WARN if explainer else [])]
+    total_words = concept_words = 0
+    src_grams = _grams(" ".join(s.text for s in ledger.sources), 8) if explainer else set()
+    known = norm_text(" ".join(f"{c.text} {c.evidence} {c.speaker}" for c in ledger.claims) + " " + ledger.topic)
     sections = [s.get("section") for s in res_scenes]
+    last = "takeaway" if explainer else "close"
     if not res_scenes or sections[0] != "hook":
         bad.append("The first scene must be section=hook.")
-    if sections and sections[-1] != "close":
-        bad.append("The last scene must be section=close.")
-    if "analysis" not in sections:
-        bad.append("Include at least one section=analysis scene.")
-    if stance in ("critical", "supportive") and "counterpoint" not in sections:
-        bad.append(f"A {stance} video must include a section=counterpoint scene (the other side / what is missing).")
-    for need in ("recap", "scenarios"):
-        if need not in sections:
-            bad.append(f"Include a section={need} scene.")
+    if sections and sections[-1] != last:
+        bad.append(f"The last scene must be section={last}.")
+    if explainer:
+        for need in ("mechanism", "evidence", "counterview"):
+            if need not in sections:
+                bad.append(f"Include a section={need} scene.")
+        if "impact" not in sections:
+            soft.append("There is no 'impact' scene (who gains / who loses); explainers usually have one.")
+    else:
+        if "analysis" not in sections:
+            bad.append("Include at least one section=analysis scene.")
+        if stance in ("critical", "supportive") and "counterpoint" not in sections:
+            bad.append(f"A {stance} video must include a section=counterpoint scene (the other side / what is missing).")
+        for need in ("recap", "scenarios"):
+            if need not in sections:
+                bad.append(f"Include a section={need} scene.")
     for si, sc in enumerate(res_scenes):
         tag = f"Scene {si + 1} ({sc.get('section')})"
         beats = sc.get("beats") or []
@@ -288,6 +395,8 @@ def lint(res_scenes: list[dict[str, Any]], ledger: Ledger, stance: str, minutes:
             typ, text = b.get("type", ""), (b.get("text") or "").strip()
             ids = b.get("claim_ids") or []
             total_words += len(text.split())
+            if typ == "concept":
+                concept_words += len(text.split())
             where = f"{tag}, beat {bi + 1} ({typ})"
             if not text:
                 bad.append(f"{where} is empty.")
@@ -298,6 +407,16 @@ def lint(res_scenes: list[dict[str, Any]], ledger: Ledger, stance: str, minutes:
             for p in wrn:
                 if (m := p.search(text)):
                     soft.append(f"{where}: loaded wording '{m.group(0)}' - consider a neutral word.")
+            if explainer and src_grams and _grams(re.sub(r"[\"“”][^\"“”]{12,}[\"“”]", " ", text), 8) & src_grams:
+                bad.append(f"{where}: copies 8+ consecutive words from a source; put it in your own words.")
+            if typ == "concept":
+                if not explainer:
+                    bad.append(f"{where}: concept beats are only allowed in explainers.")
+                if re.search(r"\d", text):
+                    bad.append(f"{where}: a concept beat must not contain digits or dates; move figures into a fact beat with a claim.")
+                if (names := _unknown_names(text, known)):
+                    soft.append(f"{where}: names {names[:4]} are not in the ledger; a concept beat should not name real people, companies or countries.")
+                continue
             cited = [ledger.claim(i) for i in ids]
             if any(c is None for c in cited):
                 bad.append(f"{where}: cites a claim id that is not in the ledger {ids}.")
@@ -334,7 +453,7 @@ def lint(res_scenes: list[dict[str, Any]], ledger: Ledger, stance: str, minutes:
                 if not any(contains(c.quote or c.evidence, q) or contains(c.evidence, q) for c in cited):
                     bad.append(f"{where}: quoted words \"{q[:50]}\" are not word-for-word in the cited claims.")
         card = sc.get("card") or {}
-        if card.get("type") in ("quote", "number", "timeline", "sources"):
+        if card.get("type") in CARD_TYPES:
             cs = [ledger.claim(i) for i in card.get("claim_ids") or []]
             if any(c is None or c.status not in USABLE for c in cs) or not cs:
                 bad.append(f"{tag}: card cites unknown/unusable claims.")
@@ -347,14 +466,34 @@ def lint(res_scenes: list[dict[str, Any]], ledger: Ledger, stance: str, minutes:
             elif card["type"] == "sources" and not any(ledger.source(sid) and ledger.source(sid).outlet != "user notes"
                                                        for c in cs for sid in c.source_ids):
                 bad.append(f"{tag}: a sources card needs claims that come from published sources.")
+            elif card["type"] == "chart" and not chart_series(ledger, cs):
+                bad.append(f"{tag}: a chart card needs claims that come from a data series (see DATA SERIES in the ledger).")
     lo, hi = words_budget(minutes)
     if not (lo * 0.8 <= total_words <= hi * 1.1):
         bad.append(f"Narration is {total_words} words; for {minutes} minutes it must be about {lo}-{hi}.")
+    if explainer and total_words and concept_words / total_words > 0.30:
+        bad.append(f"{100 * concept_words // total_words}% of the narration is unsourced concept explanation; keep it under 30% and "
+                   "ground the rest in ledger claims.")
     return bad, soft
 
 
+def chart_series(ledger: Ledger, claims: list[Any], limit: int = 3) -> list[Source]:
+    """Data series behind these claims that can be drawn together: same unit, at most `limit` lines."""
+    out: list[Source] = []
+    for c in claims:
+        for sid in c.source_ids:
+            s = ledger.source(sid)
+            if s and s.series and s not in out and (not out or s.series.get("unit") == out[0].series.get("unit")):
+                out.append(s)
+    return out[:limit]
+
+
 SECTION_LABEL = {"recap": "facts", "context": "facts", "positions": "quote", "analysis": "analysis",
-                 "counterpoint": "analysis", "scenarios": "analysis", "hook": "news", "close": "news"}
+                 "counterpoint": "analysis", "scenarios": "analysis", "hook": "news", "close": "news",
+                 "setup": "ex_explained", "background": "ex_history", "mechanism": "ex_how", "evidence": "ex_data",
+                 "impact": "ex_impact", "counterview": "ex_view", "takeaway": "ex_explained"}
+ANALYTIC = {"analysis": ("analysis", "counterpoint", "scenarios"),
+            "explainer": ("background", "mechanism", "evidence", "impact", "counterview")}
 
 
 def source_tag(ledger: Ledger, ids: list[str], limit: int = 2) -> str:
@@ -370,7 +509,7 @@ def source_tag(ledger: Ledger, ids: list[str], limit: int = 2) -> str:
     return " · ".join(names[:limit])
 
 
-def to_script(res: dict[str, Any], ledger: Ledger, stance: str, lang: str) -> Script:
+def to_script(res: dict[str, Any], ledger: Ledger, stance: str, lang: str, style: str = "analysis") -> Script:
     scenes: list[Scene] = []
     n = len(res["scenes"])
     for i, sc in enumerate(res["scenes"]):
@@ -382,14 +521,14 @@ def to_script(res: dict[str, Any], ledger: Ledger, stance: str, lang: str) -> Sc
             narration=" ".join((b.get("text") or "").strip() for b in beats),
             headline=(sc.get("headline") or "")[:60], visual_query=sc.get("visual_query", ""),
             label=t(lang, SECTION_LABEL.get(section, "news")),
-            kind="analysis" if section in ("analysis", "counterpoint", "scenarios") else ("outro" if i == n - 1 else "news"),
+            kind="analysis" if section in ANALYTIC[style] else ("outro" if i == n - 1 else "news"),
             section=section, claim_ids=ids, source_tag=source_tag(ledger, ids),
             card=({"type": card["type"], "claim_ids": card.get("claim_ids", []), "label": card.get("label", "")}
-                  if card.get("type") in ("quote", "number", "timeline", "sources") else None)))
+                  if card.get("type") in CARD_TYPES else None)))
     return Script(title=res["title"].strip(), description=res["description"].strip(),
                   tags=[x.strip() for x in res.get("tags", [])][:12],
                   scenes=scenes, sources=sorted({friendly(s.outlet) for s in ledger.sources if s.outlet != "user notes"}),
-                  stance=stance, language=lang)
+                  stance=stance, language=lang, style=style)
 
 
 @dataclass
@@ -400,19 +539,36 @@ class Written:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
-def as_of_text(tz: str = "Asia/Kolkata", now: datetime | None = None) -> str:
+def as_of_text(tz: str = "Asia/Kolkata", now: datetime | None = None, date_only: bool = False) -> str:
     n = now or datetime.now(ZoneInfo(tz))
-    return n.strftime("%d %b %Y, %I:%M %p IST").lstrip("0")
+    return n.strftime("%d %b %Y").lstrip("0") if date_only else n.strftime("%d %b %Y, %I:%M %p IST").lstrip("0")
+
+
+def series_brief(ledger: Ledger) -> str:
+    """Which claims can drive a chart card: claims that come from a data series source."""
+    rows = []
+    for s in ledger.sources:
+        if s.series:
+            ids = [c.id for c in ledger.claims if s.id in c.source_ids and c.status in USABLE]
+            pts = s.series["points"]
+            if ids:
+                rows.append(f"{s.id}: {s.series['label']} - {s.series['country']} ({pts[0][0]}-{pts[-1][0]}) [{s.series['unit']}] -> claims {', '.join(ids)}")
+    return "\n".join(rows)
 
 
 def write_analysis(client: Any, model: str, ledger: Ledger, stance: str, minutes: float, lang: str, channel: str,
                    cfg_analysis: dict | None = None, insights: str = "", as_of: str = "",
-                   log: Callable[[str], None] = print, instruction: str = "", previous_raw: dict | None = None) -> Written:
+                   log: Callable[[str], None] = print, instruction: str = "", previous_raw: dict | None = None,
+                   style: str = "analysis") -> Written:
     ca = cfg_analysis or {}
     lo, hi = words_budget(minutes)
-    system = WRITE_SYSTEM.format(lang_rules=LANG_RULES[norm(lang)], stance_rules=STANCE_RULES[stance])
+    explainer = style == "explainer"
+    system = (EXPLAINER_SYSTEM.format(lang_rules=LANG_RULES[norm(lang)]) if explainer
+              else WRITE_SYSTEM.format(lang_rules=LANG_RULES[norm(lang)], stance_rules=STANCE_RULES[stance]))
+    schema = write_schema(style)
     base = (f"Channel: {channel}\nTopic: {ledger.topic}\nTarget length: {minutes} minutes (about {lo}-{hi} words of narration in total)\n"
             f"As of: {as_of or ledger.as_of or 'now'}\n\nLEDGER (the only facts you may use):\n{claims_block(ledger)}"
+            + (f"\n\nDATA SERIES (for chart cards):\n{sb}" if explainer and (sb := series_brief(ledger)) else "")
             + (f"\n\nWhat has worked on this channel (style only, never facts):\n{insights}" if insights else ""))
     if instruction and previous_raw:
         compact = [{"section": sc.get("section"), "headline": sc.get("headline"), "card": sc.get("card"),
@@ -424,9 +580,9 @@ def write_analysis(client: Any, model: str, ledger: Ledger, stance: str, minutes
                  + f"\n\nEDITOR'S INSTRUCTION - apply it and return the complete revised script: {instruction}")
     feedback, written = "", None
     for attempt in range(3):
-        res = call_tool(client, model, system, base + feedback, "submit_analysis", WRITE_SCHEMA, 16000)
-        bad, soft = lint(res.get("scenes", []), ledger, stance, minutes, ca.get("banned_patterns"), ca.get("warn_patterns"))
-        written = Written(to_script(res, ledger, stance, lang), bad, soft, res)
+        res = call_tool(client, model, system, base + feedback, "submit_analysis", schema, 16000)
+        bad, soft = lint(res.get("scenes", []), ledger, stance, minutes, ca.get("banned_patterns"), ca.get("warn_patterns"), style)
+        written = Written(to_script(res, ledger, stance, lang, style), bad, soft, res)
         if not bad:
             break
         log(f"script check found {len(bad)} problem(s); asking for a fix (attempt {attempt + 1}/3)…")
@@ -455,7 +611,7 @@ def chapters(script: Script, starts: list[float], intro: float, lang: str) -> li
 
 
 def build_description(script: Script, ledger: Ledger, starts: list[float], intro: float, credits: list[str],
-                      channel: dict, lang: str, as_of: str, ai_note: bool = True) -> str:
+                      channel: dict, lang: str, as_of: str, ai_note: bool = True, style: str = "analysis") -> str:
     lines = [script.description, ""]
     if as_of:
         lines += [f"{t(lang, 'asof')} {as_of}", ""]
@@ -468,7 +624,7 @@ def build_description(script: Script, ledger: Ledger, starts: list[float], intro
         if group:
             lines.append(f"[{t(lang, f'tier{tier}')}]")
             lines += [f"• {friendly(s.outlet)}: {s.url}" for s in group]
-    lines += ["", t(lang, "d_analysis"), t(lang, "d_unconfirmed")]
+    lines += ["", t(lang, "d_explainer" if style == "explainer" else "d_analysis"), t(lang, "d_unconfirmed")]
     if credits:
         lines += ["", t(lang, "d_credits")] + [f"• {c}" for c in credits]
     if ai_note:

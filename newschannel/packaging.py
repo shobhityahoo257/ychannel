@@ -13,7 +13,7 @@ from .i18n import LANG_RULES, norm
 from .llm import call_tool
 from .models import Script, Topic
 
-SYSTEM = """You are a YouTube growth editor for an Indian political-news channel. Using ONLY the facts
+SYSTEM = """You are a YouTube growth editor for {channel_kind}. Using ONLY the facts
 in the story text given (never invent facts, numbers, names or quotes), produce:
 1. hooks: 5 alternative spoken openings for the first scene (in the OUTPUT LANGUAGE below). Each is 8-22 words, makes the
    viewer need the next sentence within 3 seconds (stakes, tension, a surprising fact FROM THE SOURCES, or a question),
@@ -60,8 +60,13 @@ def _safe(candidate: str, allowed_numbers: set[str]) -> bool:
     return numbers(candidate) <= allowed_numbers
 
 
+CHANNEL_KIND = {"explainer": "a global economics-and-business explainer channel (honest, curiosity-driven, never promising returns)",
+                "": "an Indian political-news channel"}
+
+
 def improve(client: Any, model: str, script: Script, topic: Topic, insights: str = "",
-            categories: list[str] | None = None, lang: str = "hinglish", rewrite_hook: bool = True) -> Packaging:
+            categories: list[str] | None = None, lang: str = "hinglish", rewrite_hook: bool = True,
+            style: str = "") -> Packaging:
     """Rewrite script.scenes[0].narration and script.title in place with the best safe options."""
     facts = " ".join(f"{s.title}. {s.summary}" for s in topic.stories[:6])
     first = script.scenes[0]
@@ -73,7 +78,8 @@ def improve(client: Any, model: str, script: Script, topic: Topic, insights: str
     if insights:
         prompt += f"\n\nWhat has worked on this channel (use for style only, never for facts):\n{insights}"
     try:
-        res = call_tool(client, model, SYSTEM + "\n\n" + LANG_RULES[norm(lang)], prompt, "submit_packaging", SCHEMA, 3000)
+        system = SYSTEM.format(channel_kind=CHANNEL_KIND.get(style, CHANNEL_KIND[""]))
+        res = call_tool(client, model, system + "\n\n" + LANG_RULES[norm(lang)], prompt, "submit_packaging", SCHEMA, 3000)
     except Exception as exc:                       # packaging is an upgrade, never a blocker
         print(f"[packaging] skipped: {exc}")
         return Packaging()

@@ -22,6 +22,8 @@ from .config import ROOT, Config
 from .llm import make_client
 from .library import Library
 from . import analysis as analysis_mod
+from . import data as data_mod
+from . import deep, explainer
 from . import pagephotos
 from . import workflow as wfm
 from . import scout as scout_mod
@@ -36,10 +38,23 @@ IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 VID_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
 STEPS = ["clips", "writing script", "synthesizing voice", "user images", "choosing and arranging",
          "rendering"]
-RESEARCH_STEPS = ["fetching sources", "extracting claims", "cross-checking", "deciding angle"]
+RESEARCH_STEPS = ["looking for official", "fetching sources", "extracting claims", "cross-checking", "deciding"]
 WF_STEPS = ["writing", "polishing", "choosing and arranging", "synthesizing voice", "rendering"]
 SCOUT_STEPS = ["planning photo needs", "searching", "rating photos"]
 ANALYSIS_STEPS = ["writing the", "polishing", "synthesizing voice", "choosing and arranging", "rendering"]
+
+
+def clean_data_specs(raw: Any) -> list[dict[str, Any]]:
+    """Official-data requests from the browser: a few countries, each with known indicators only."""
+    out: list[dict[str, Any]] = []
+    for item in (raw if isinstance(raw, list) else [])[:4]:
+        if not isinstance(item, dict):
+            continue
+        country = str(item.get("country") or "").strip()[:60]
+        inds = [i for i in (item.get("indicators") or []) if i in data_mod.INDICATORS][:6]
+        if country and inds:
+            out.append({"country": country, "indicators": inds})
+    return out
 
 
 class Job:
@@ -387,7 +402,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
         if spec:
             (clip_dir / "clips.txt").write_text("\n".join(spec), encoding="utf-8")
         lib_ids = [i for i in json.loads(f.get("library_ids", "[]")) if isinstance(i, str)]
-        language = f.get("language") if f.get("language") in ("hinglish", "hindi") else None
+        language = f.get("language") if f.get("language") in ("hinglish", "hindi", "english") else None
         mode = parse_mode(f)
         if mode and not demo:                     # step-by-step: stop for approval after the steps marked "manual"
             return start_workflow("news", topic.title, topic.slug, fmt,
@@ -410,13 +425,14 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
     @app.post("/api/scout")
     def scout_start():
         body = request.get_json(force=True) or {}
-        story, hints = "", []
+        story, hints, style = "", [], ""
         try:
             if body.get("research_id"):
                 rid = str(body["research_id"])
                 if not rid.isalnum():
                     abort(404)
-                led, _ = analysis_mod.load_research(store(), rid)
+                led, rec = analysis_mod.load_research(store(), rid)
+                style = rec.get("style", "")
                 from . import deep as deep_mod
                 story = f"{led.topic}\n" + deep_mod.ledger_brief(led)
             elif body.get("workflow_id"):
@@ -424,6 +440,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 if not wid.replace("-", "").isalnum() or not wfm.Workflow.exists(store(), wid):
                     abort(404)
                 w = wfm.Workflow(store(), wid)
+                style = w.params().get("style", "")
                 sc = w.script()
                 story = sc.title + "\n" + "\n".join(f"{x.headline}. {x.narration[:220]}" for x in sc.scenes)
                 if w.state["kind"] == "analysis":
@@ -448,7 +465,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             try:
                 c = cfg()
                 job.result = scout_mod.scout(c, make_client(c, required=False), story, hints, extra,
-                                             folder=store().root / "_scout" / sid, log=job.log)
+                                             folder=store().root / "_scout" / sid, log=job.log, style=style)
                 job.status = "done"
             except Exception as exc:
                 job.status, job.error = "error", f"{type(exc).__name__}: {exc}"
@@ -556,7 +573,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
     def wf_view(wf: "wfm.Workflow") -> dict[str, Any]:
         st = wf.state
         out = {k: st.get(k) for k in ("id", "kind", "status", "title", "format", "mode", "error", "created")}
-        out["params"] = {k: v for k, v in st["params"].items() if k in ("language", "stance", "minutes", "music", "breaking", "research_id")}
+        out["params"] = {k: v for k, v in st["params"].items() if k in ("language", "stance", "minutes", "music", "breaking", "research_id", "style")}
         if (wf.dir / "script.json").exists() and st["status"] != "queued":
             out["script"] = wfm.describe_script(wf)
             out["check"] = wf.check() if st["kind"] == "analysis" else None
@@ -693,8 +710,13 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             headline = headline or topic.title
         if not headline:
             return jsonify({"error": "A headline / topic is required."}), 400
-        if not (urls or topic or (body.get("notes") or "").strip()):
-            return jsonify({"error": "Add at least one source link, pick a news story, or paste notes."}), 400
+        style = body.get("style") or "analysis"
+        if style not in deep.STYLES:
+            return jsonify({"error": "Unknown video style."}), 400
+        data_specs = clean_data_specs(body.get("data")) if style == "explainer" else []
+        discover = bool(body.get("discover")) and style == "explainer"
+        if not (urls or topic or (body.get("notes") or "").strip() or data_specs or discover):
+            return jsonify({"error": "Add at least one source link, official data, or paste notes."}), 400
         job = Job(headline, RESEARCH_STEPS)
         jobs[job.id] = job
 
@@ -703,7 +725,7 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             try:
                 c = cfg()
                 res = analysis_mod.run_research(c, make_client(c), store(), headline, urls, body.get("notes") or "",
-                                                topic, job.log)
+                                                topic, job.log, style=style, data=data_specs, discover=discover)
                 job.result = res
                 job.status = "done"
             except Exception as exc:
@@ -736,6 +758,9 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             led, _ = analysis_mod.load_research(store(), rid)
         except OSError:
             return jsonify({"error": "Research not found. Run the research step again."}), 400
+        style = f.get("style") or "analysis"
+        if style not in deep.STYLES:
+            return jsonify({"error": "Unknown video style."}), 400
         stance, minutes = f.get("stance", "auto"), f.get("minutes", "auto")
         if stance not in ("auto", "neutral", "critical", "supportive"):
             return jsonify({"error": "Unknown angle."}), 400
@@ -745,8 +770,8 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
             except ValueError:
                 return jsonify({"error": "Length must be a number of minutes or 'auto'."}), 400
         language = f.get("language") or None
-        if language not in (None, "hinglish", "hindi"):
-            return jsonify({"error": "Language must be hinglish or hindi."}), 400
+        if language not in (None, "hinglish", "hindi", "english"):
+            return jsonify({"error": "Language must be english, hinglish or hindi."}), 400
         job = Job(led.topic, ANALYSIS_STEPS)
         work_dir = ROOT / "uploads" / job.id
         img_dir = work_dir / "images"
@@ -757,10 +782,12 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 file.save(img_dir / f"{uuid.uuid4().hex[:8]}{ext}")
         lib_ids = [i for i in json.loads(f.get("library_ids", "[]")) if isinstance(i, str)]
         mode = parse_mode(f)
+        if style == "explainer":
+            explainer.Ideas(store().root / "_ideas.json").mark_made(led.topic)
         if mode:
             return start_workflow("analysis", led.topic, "analysis", "analysis",
                                   {"research_id": rid, "stance": stance, "minutes": minutes, "language": language,
-                                   "music": f.get("music") or None, "library_ids": lib_ids}, mode, img_dir, None)
+                                   "music": f.get("music") or None, "library_ids": lib_ids, "style": style}, mode, img_dir, None)
         jobs[job.id] = job
 
         def work():
@@ -769,7 +796,8 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
                 try:
                     c = cfg()
                     meta = analysis_mod.make_video(c, make_client(c), make_tts(c), store(), rid, stance, minutes, language,
-                                                   f.get("music") or None, [img_dir], lib_ids, log=job.log, approved_only=True)
+                                                   f.get("music") or None, [img_dir], lib_ids, log=job.log, approved_only=True,
+                                                   style=style)
                     job.result = {"id": meta["id"], "title": meta["title"], "issues": meta["issues"]}
                     job.status = "done"
                 except Exception as exc:
@@ -779,6 +807,31 @@ def create_app(config_path: str | None = None, env_path: Path | None = None) -> 
 
         threading.Thread(target=work, daemon=True).start()
         return jsonify({"job": job.id})
+
+    # ----- explainers: settings, topic ideas
+    @app.get("/api/explainer/config")
+    def explainer_config():
+        c = cfg()
+        ex = explainer.settings(c)
+        return jsonify({"channel": ex["channel"], "language": ex["language"], "niche": ex["niche"], "discover": ex["discover"],
+                        "series": explainer.SERIES, "indicators": data_mod.catalog(),
+                        "countries": sorted({n.title() for n in data_mod.COUNTRIES if len(n) > 3})})
+
+    @app.post("/api/explainer/ideas")
+    def explainer_ideas():
+        body = request.get_json(force=True) or {}
+        try:
+            n = max(3, min(12, int(body.get("n") or 8)))
+        except (TypeError, ValueError):
+            n = 8
+        series = body.get("series") if body.get("series") in {s["id"] for s in explainer.SERIES} else ""
+        c = cfg()
+        try:
+            out = explainer.suggest(c, make_client(c), explainer.Ideas(store().root / "_ideas.json"), n,
+                                    str(body.get("focus") or "")[:300], series, store().history())
+        except Exception as exc:
+            return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+        return jsonify({"ideas": out})
 
     @app.get("/api/videos/<rid>/ledger")
     def video_ledger(rid: str):
